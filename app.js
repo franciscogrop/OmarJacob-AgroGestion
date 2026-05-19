@@ -1636,6 +1636,11 @@ function renderApplicationDetail(applicationId) {
   const first = rows[0];
   const productCost = rows.reduce((sum, row) => sum + Number(row.productCost || 0), 0);
   const linkedOrder = orderById(first.orderId);
+  const lot = findLot(first);
+  const service = linkedOrder?.task || "Aplicación";
+  const owner = linkedOrder?.owner || "-";
+  const crop = linkedOrder?.crop || lot?.crop || "-";
+  const variety = linkedOrder?.variety || lot?.variety || "-";
   const laborCost = laborCostForApplicationRows(rows);
   const laborCostHa = linkedOrder ? Number(linkedOrder.laborCostHa || 0) : Number(first.laborCostHa || 0);
   const total = productCost + laborCost;
@@ -1643,19 +1648,49 @@ function renderApplicationDetail(applicationId) {
 
   detail.innerHTML = `
     <div class="application-detail-header">
-      <div>
-        <strong>${applicationId}</strong>
-        <span>${dateShort(first.date)} · ${lotName(first.lotId)} · ${number(first.hectares, 2)} ha</span>
-        <div class="detail-actions">
-          <button class="link-button primary" data-add-product-application="${applicationId}">Agregar producto</button>
-        </div>
+      <div class="application-order-heading">
+        <span class="application-order-label">Orden para contratista</span>
+        <strong>${service}</strong>
+        <span>${applicationId}${linkedOrder?.id ? ` · ${linkedOrder.id}` : ""}</span>
       </div>
-      <div class="application-detail-kpis">
-        <span>Productos ${money(productCost)}</span>
-        <span>Labor ${money(laborCost)} (${money(laborCostHa)}/ha)</span>
-        <span>Total ${money(total)}</span>
-        <span>Total/ha ${money(costHa)}</span>
+      <div class="detail-actions application-share-actions">
+        <button class="link-button" data-copy-application-order="${applicationId}">Copiar orden</button>
+        <button class="link-button" data-print-application-order="${applicationId}">Imprimir/PDF</button>
+        <button class="link-button primary" data-add-product-application="${applicationId}">Agregar producto</button>
       </div>
+    </div>
+    <div class="application-order-summary">
+      <article>
+        <span>Lote</span>
+        <strong>${lotName(first.lotId)}</strong>
+        <small>${lot?.farm || "-"}</small>
+      </article>
+      <article>
+        <span>Superficie</span>
+        <strong>${number(first.hectares, 2)} ha</strong>
+        <small>${crop}${variety && variety !== "-" ? ` · ${variety}` : ""}</small>
+      </article>
+      <article>
+        <span>Fecha</span>
+        <strong>${dateShort(first.date)}</strong>
+        <small>${owner}</small>
+      </article>
+      <article>
+        <span>Servicio</span>
+        <strong>${service}</strong>
+        <small>${linkedOrder?.status || "Pendiente"}</small>
+      </article>
+      <article class="cost-only">
+        <span>Total</span>
+        <strong>${money(total)}</strong>
+        <small>${money(costHa)}/ha</small>
+      </article>
+    </div>
+    <div class="application-detail-kpis cost-only">
+      <span>Productos ${money(productCost)}</span>
+      <span>Labor ${money(laborCost)} (${money(laborCostHa)}/ha)</span>
+      <span>Total ${money(total)}</span>
+      <span>Total/ha ${money(costHa)}</span>
     </div>
     <div class="table-wrap">
       <table>
@@ -1665,9 +1700,9 @@ function renderApplicationDetail(applicationId) {
             <th>Dosis/ha</th>
             <th>Ha</th>
             <th>Cantidad</th>
-            <th>Costo unit.</th>
-            <th>Costo producto</th>
-            <th>$/ha</th>
+            <th class="cost-only">Costo unit.</th>
+            <th class="cost-only">Costo producto</th>
+            <th class="cost-only">$/ha</th>
             <th>Acciones</th>
           </tr>
         </thead>
@@ -1678,9 +1713,9 @@ function renderApplicationDetail(applicationId) {
               <td>${number(row.dose, 2)}</td>
               <td>${number(row.hectares, 2)}</td>
               <td>${number(row.usedQuantity, 2)}</td>
-              <td>${money(row.unitCost)}</td>
-              <td>${money(row.productCost)}</td>
-              <td>${money(row.hectares ? row.productCost / row.hectares : 0)}</td>
+              <td class="cost-only">${money(row.unitCost)}</td>
+              <td class="cost-only">${money(row.productCost)}</td>
+              <td class="cost-only">${money(row.hectares ? row.productCost / row.hectares : 0)}</td>
               <td>
                 <div class="row-actions">
                   <button class="link-button" data-edit-application="${applicationKey(row)}">Editar</button>
@@ -1695,9 +1730,9 @@ function renderApplicationDetail(applicationId) {
               <td>${money(laborCostHa)}/ha</td>
               <td>${number(first.hectares, 2)}</td>
               <td>-</td>
-              <td>-</td>
-              <td>${money(laborCost)}</td>
-              <td>${money(laborCostHa)}</td>
+              <td class="cost-only">-</td>
+              <td class="cost-only">${money(laborCost)}</td>
+              <td class="cost-only">${money(laborCostHa)}</td>
               <td>-</td>
             </tr>
           ` : ""}
@@ -1713,6 +1748,50 @@ function renderApplicationDetail(applicationId) {
     button.addEventListener("click", () => deleteApplication(button.dataset.deleteApplication));
   });
   detail.querySelector("[data-add-product-application]")?.addEventListener("click", () => addProductToApplication(applicationId));
+  detail.querySelector("[data-copy-application-order]")?.addEventListener("click", () => copyApplicationOrder(applicationId));
+  detail.querySelector("[data-print-application-order]")?.addEventListener("click", () => printApplicationOrder(applicationId));
+}
+
+function applicationOrderText(applicationId) {
+  const rows = data.applications.filter((application) => application.id === applicationId);
+  if (!rows.length) return "";
+  const first = rows[0];
+  const linkedOrder = orderById(first.orderId);
+  const lot = findLot(first);
+  const service = linkedOrder?.task || "Aplicación";
+  const owner = linkedOrder?.owner || "-";
+  const lines = [
+    `Orden: ${service}`,
+    `Aplicación: ${applicationId}${linkedOrder?.id ? ` / ${linkedOrder.id}` : ""}`,
+    `Fecha: ${dateShort(first.date)}`,
+    `Lote: ${lotName(first.lotId)}${lot?.farm ? ` (${lot.farm})` : ""}`,
+    `Superficie: ${number(first.hectares, 2)} ha`,
+    `Responsable/contratista: ${owner}`,
+    "",
+    "Productos:"
+  ];
+  rows.forEach((row) => {
+    lines.push(`- ${row.productName || productName(row.productId)}: ${number(row.dose, 2)} dosis/ha · ${number(row.usedQuantity, 2)} total`);
+  });
+  return lines.join("\n");
+}
+
+async function copyApplicationOrder(applicationId) {
+  const text = applicationOrderText(applicationId);
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Orden copiada para compartir");
+  } catch {
+    showToast("No se pudo copiar automáticamente");
+  }
+}
+
+function printApplicationOrder(applicationId) {
+  if (!applicationId) return;
+  document.body.dataset.printApplicationId = applicationId;
+  document.body.classList.add("printing-application-order");
+  window.setTimeout(() => window.print(), 50);
 }
 
 function laborCostForOrder(order) {
@@ -3189,6 +3268,10 @@ bindSyncTools();
 bindForms();
 bindMapUpload();
 bindMapTools();
+window.addEventListener("afterprint", () => {
+  document.body.classList.remove("printing-application-order");
+  delete document.body.dataset.printApplicationId;
+});
 renderAll();
 applyOrderLotDefaultHectares(true);
 applyLotDefaultCrop(document.querySelector("#orderForm"), true);
