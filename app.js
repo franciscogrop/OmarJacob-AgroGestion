@@ -3085,10 +3085,11 @@ function bindForms() {
     const existing = editingClosureId ? data.closures.find((closure) => closure.id === editingClosureId) : null;
     const hectares = Number(values.hectares);
     const kgHarvested = Number(values.kgHarvested);
-    const priceTon = Number(values.priceTon);
-    const otherCosts = Number(values.otherCosts);
+    const priceTon = values.priceTon === "" ? "" : Number(values.priceTon);
+    const otherCosts = values.otherCosts === "" ? "" : Number(values.otherCosts);
     const applicationCosts = applicationCostForLot(values.lotId);
-    const income = (kgHarvested / 1000) * priceTon;
+    const income = priceTon === "" ? "" : (kgHarvested / 1000) * priceTon;
+    const grossMargin = income === "" ? "" : income - Number(otherCosts || 0) - Number(applicationCosts || 0);
 
     const record = {
       ...(existing || {}),
@@ -3101,7 +3102,7 @@ function bindForms() {
       otherCosts,
       applicationCosts,
       income,
-      grossMargin: income - otherCosts - applicationCosts
+      grossMargin
     };
 
     if (existing) {
