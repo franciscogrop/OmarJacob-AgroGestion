@@ -57,6 +57,7 @@ let selectedHistoryLotId = "";
 let selectedCampaignLotId = "";
 let selectedCampaign = "";
 let editingCampaignClosureId = "";
+let editingClosureId = "";
 let rotationShowAllCampaigns = false;
 let closureCropFilter = "Todos";
 let historyLotCropFilter = "Todos";
@@ -2682,6 +2683,13 @@ function applicationCostForLot(lotId) {
     .reduce((sum, application) => sum + application.totalCost, 0);
 }
 
+function closureGrossMarginHa(closure) {
+  const hectares = Number(closure?.hectares || 0);
+  if (!hectares) return "";
+  const margin = closure?.grossMargin === "" || closure?.grossMargin == null ? "" : Number(closure.grossMargin);
+  return margin === "" ? "" : margin / hectares;
+}
+
 function renderClosures() {
   const filter = document.querySelector("#closureCropFilter");
   const crops = Array.from(new Set(data.closures.map((closure) => closure.crop).filter(Boolean))).sort();
@@ -2694,11 +2702,16 @@ function renderClosures() {
   const visibleClosures = data.closures
     .filter((closure) => closureCropFilter === "Todos" || closure.crop === closureCropFilter);
 
+  const submitButton = document.querySelector("#closureSubmitButton");
+  const cancelButton = document.querySelector("#cancelClosureEdit");
+  if (submitButton) submitButton.textContent = editingClosureId ? "Guardar cambios" : "Guardar cierre";
+  if (cancelButton) cancelButton.classList.toggle("hidden-panel", !editingClosureId);
+
   document.querySelector("#closuresTable").innerHTML = visibleClosures
     .slice()
     .sort((a, b) => String(b.campaign || "").localeCompare(String(a.campaign || "")))
     .map((closure) => `
-      <tr>
+      <tr class="clickable-row ${closure.id === editingClosureId ? "highlight-row" : ""}" data-edit-closure="${closure.id}">
         <td>${findLot(closure)?.name || closure.lotName || closure.lote || closure.lotId || "Sin lote"}</td>
         <td>${closure.campaign}</td>
         <td>${closure.crop}</td>
@@ -2706,11 +2719,73 @@ function renderClosures() {
         <td>${closure.enso || "-"}</td>
         <td>${numberOptional(closure.kgHarvested)}</td>
         <td>${numberOptional(closureYield(closure))}</td>
-        <td>${moneyOptional(closure.income)}</td>
-        <td>${moneyOptional(closure.grossMargin)}</td>
+        <td>${moneyOptional(closure.priceTon)}</td>
+        <td>${moneyOptional(closureGrossMarginHa(closure))}</td>
+        <td>
+          <div class="row-actions">
+            <button class="link-button" data-edit-closure-button="${closure.id}" type="button">Editar</button>
+            <button class="link-button danger" data-delete-closure="${closure.id}" type="button">Eliminar</button>
+          </div>
+        </td>
       </tr>
     `)
-    .join("") || `<tr><td colspan="9">No hay cierres cargados.</td></tr>`;
+    .join("") || `<tr><td colspan="10">No hay cierres cargados.</td></tr>`;
+
+  document.querySelectorAll("[data-edit-closure]").forEach((row) => {
+    row.addEventListener("click", () => editClosure(row.dataset.editClosure));
+  });
+  document.querySelectorAll("[data-edit-closure-button]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      editClosure(button.dataset.editClosureButton);
+    });
+  });
+  document.querySelectorAll("[data-delete-closure]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteClosure(button.dataset.deleteClosure);
+    });
+  });
+}
+
+function editClosure(id) {
+  const record = data.closures.find((closure) => closure.id === id);
+  const form = document.querySelector("#closureForm");
+  if (!record || !form) return;
+  editingClosureId = id;
+  form.elements.lotId.value = record.lotId || findLot(record)?.id || "";
+  form.elements.campaign.value = record.campaign || "";
+  form.elements.crop.value = record.crop || "";
+  form.elements.variety.value = record.variety || "";
+  form.elements.enso.value = record.enso || "";
+  form.elements.hectares.value = record.hectares ?? "";
+  form.elements.kgHarvested.value = record.kgHarvested ?? "";
+  form.elements.priceTon.value = record.priceTon ?? "";
+  form.elements.otherCosts.value = record.otherCosts ?? 0;
+  renderClosures();
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cancelClosureEdit() {
+  editingClosureId = "";
+  const form = document.querySelector("#closureForm");
+  if (form) {
+    resetForm(form);
+    applyClosureDefaults(form, true);
+  }
+  renderClosures();
+}
+
+function deleteClosure(id) {
+  const record = data.closures.find((closure) => closure.id === id);
+  if (!record) return;
+  if (!window.confirm(`Eliminar cierre de ${record.lotName || lotName(record.lotId)} ${record.campaign || ""} ${record.crop || ""}?`)) return;
+  data.closures = data.closures.filter((closure) => closure.id !== id);
+  queueSync("closures", record, "delete");
+  if (editingClosureId === id) editingClosureId = "";
+  saveData();
+  renderAll();
+  showToast("Cierre eliminado");
 }
 
 function renderAll() {
@@ -2898,6 +2973,7 @@ function bindForms() {
 
   const closureForm = document.querySelector("#closureForm");
   closureForm.elements.lotId.addEventListener("change", () => applyClosureDefaults(closureForm, true));
+  document.querySelector("#cancelClosureEdit")?.addEventListener("click", cancelClosureEdit);
 
   document.querySelector("#applicationForm").elements.productId.addEventListener("change", (event) => {
     toggleManualProductInput(event.currentTarget.form);
@@ -3006,6 +3082,7 @@ function bindForms() {
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
+    const existing = editingClosureId ? data.closures.find((closure) => closure.id === editingClosureId) : null;
     const hectares = Number(values.hectares);
     const kgHarvested = Number(values.kgHarvested);
     const priceTon = Number(values.priceTon);
@@ -3014,8 +3091,9 @@ function bindForms() {
     const income = (kgHarvested / 1000) * priceTon;
 
     const record = {
-      id: uid("clo"),
-      campaignGroupId: `CAM-${values.lotId}-${String(values.campaign || "").replace("/", "-")}`,
+      ...(existing || {}),
+      id: existing?.id || uid("clo"),
+      campaignGroupId: existing?.campaignGroupId || `CAM-${values.lotId}-${String(values.campaign || "").replace("/", "-")}`,
       ...values,
       hectares,
       kgHarvested,
@@ -3026,13 +3104,20 @@ function bindForms() {
       grossMargin: income - otherCosts - applicationCosts
     };
 
-    data.closures.push(record);
-    queueSync("closures", record);
+    if (existing) {
+      const index = data.closures.findIndex((closure) => closure.id === existing.id);
+      if (index >= 0) data.closures[index] = record;
+      queueSync("closures", record, "update");
+    } else {
+      data.closures.push(record);
+      queueSync("closures", record);
+    }
     saveData();
+    editingClosureId = "";
     resetForm(event.currentTarget);
     applyClosureDefaults(event.currentTarget, true);
     renderAll();
-    showToast("Campaña cerrada");
+    showToast(existing ? "Cierre actualizado" : "Campaña cerrada");
   });
 }
 
