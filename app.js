@@ -2120,9 +2120,10 @@ function canonicalCropName(crop) {
   const value = String(crop || "").trim();
   const normalized = normalizeName(value);
   if (!value) return "";
+  if (normalized.includes("trigo") && normalized.includes("soja")) return "Trigo / Soja 2da";
   if (normalized.startsWith("soja") && (normalized.includes("1") || normalized.includes("1ra") || normalized.includes("1o"))) return "Soja 1ra";
   if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o"))) return "Soja 2da";
-  if (normalized.startsWith("soja")) return "Soja";
+  if (normalized.startsWith("soja")) return "Soja 1ra";
   if (normalized.includes("alfalfa")) return "Alfalfa";
   if (/^ma.*z/.test(normalized) || normalized.includes("maiz")) return "Maiz";
   if (normalized.includes("trigo")) return "Trigo";
