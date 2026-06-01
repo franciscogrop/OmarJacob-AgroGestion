@@ -122,7 +122,7 @@
             <form id="lotForm" class="form-grid">
               <label>Nombre <input name="name" required placeholder="Lote 1" /></label>
               <label>Campo <input name="farm" required placeholder="La Esperanza" /></label>
-              <label>Hectáreas <input name="hectares" type="number" min="0" step="0.01" required /></label>
+              <label>Hectáreas <input name="hectares" type="text" inputmode="decimal" required /></label>
               <label>Campaña <input name="campaign" required value="2025/26" /></label>
               <label>Cultivo <input name="crop" required placeholder="Soja" /></label>
               <label>Variedad/Híbrido <input name="variety" placeholder="DM 46i20, DK 72-10" /></label>
@@ -214,10 +214,10 @@
               <button class="secondary-form-button" data-set-barbecho="orderForm" type="button">Barbecho</button>
               <label>Tarea guardada <select name="taskPreset"></select></label>
               <label>Tarea <input name="task" required placeholder="Pulverización" /></label>
-              <label>Hectareas <input name="plannedHectares" type="number" min="0" step="0.01" /></label>
+              <label>Hectareas <input name="plannedHectares" type="text" inputmode="decimal" /></label>
               <label>Contratista guardado <select name="ownerPreset"></select></label>
               <label>Responsable <input name="owner" placeholder="Operario / contratista" /></label>
-              <label>Costo labor/ha <input name="laborCostHa" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Costo labor/ha <input name="laborCostHa" type="text" inputmode="decimal" value="0" /></label>
               <label>Estado
                 <select name="status">
                   <option>Pendiente</option>
@@ -304,10 +304,10 @@
               <label>ID aplicacion <input name="id" placeholder="APL-001" /></label>
               <label>Producto <select name="productId" required></select></label>
               <label class="manual-product hidden-panel">Producto no cargado <input name="manualProductName" placeholder="Nombre del producto" /></label>
-              <label>Dosis/ha <input name="dose" type="number" min="0" step="0.0001" required /></label>
-              <label>Cantidad total <input name="usedQuantity" type="number" min="0" step="0.01" /></label>
-              <label>Hectáreas <input name="hectares" type="number" min="0" step="0.01" required /></label>
-              <label>Costo labor/ha <input name="laborCostHa" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Dosis/ha <input name="dose" type="text" inputmode="decimal" required /></label>
+              <label>Cantidad total <input name="usedQuantity" type="text" inputmode="decimal" /></label>
+              <label>Hectáreas <input name="hectares" type="text" inputmode="decimal" required /></label>
+              <label>Costo labor/ha <input name="laborCostHa" type="text" inputmode="decimal" value="0" /></label>
               <button type="submit">Guardar aplicación</button>
             </form>
           </section>
@@ -340,7 +340,7 @@
 
         <section class="view" id="stock">
           <section class="form-band">
-            <h2>Nuevo producto</h2>
+            <h2 id="productFormTitle">Nuevo producto</h2>
             <form id="productForm" class="form-grid">
               <label>Producto <input name="name" required placeholder="Glifosato" /></label>
               <label>Tipo
@@ -354,10 +354,13 @@
                 </select>
               </label>
               <label>Unidad <input name="unit" required placeholder="lt, kg, bolsa" /></label>
-              <label>Stock <input name="quantity" type="number" min="0" step="0.01" required /></label>
-              <label>Costo unitario <input name="unitCost" type="number" min="0" step="0.01" required /></label>
+              <label>Stock <input name="quantity" type="text" inputmode="decimal" required /></label>
+              <label>Costo unitario <input name="unitCost" type="text" inputmode="decimal" required /></label>
               <label>Depósito <input name="warehouse" placeholder="Galpón principal" /></label>
-              <button type="submit">Guardar producto</button>
+              <div class="form-actions">
+                <button type="submit">Guardar producto</button>
+                <button class="link-button hidden-panel" id="cancelProductEdit" type="button">Cancelar edición</button>
+              </div>
             </form>
           </section>
           <section class="panel">
@@ -376,6 +379,7 @@
                     <th>Costo unit.</th>
                     <th>Valorizado</th>
                     <th>Depósito</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="productsTable"></tbody>
@@ -505,10 +509,10 @@
                   <option>Neutral</option>
                 </select>
               </label>
-              <label>Ha cosechadas <input name="hectares" type="number" min="0" step="0.01" required /></label>
-              <label>Kg cosechados <input name="kgHarvested" type="number" min="0" step="1" required /></label>
-              <label>Precio por tonelada <input name="priceTon" type="number" min="0" step="0.01" /></label>
-              <label>Otros costos <input name="otherCosts" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Ha cosechadas <input name="hectares" type="text" inputmode="decimal" required /></label>
+              <label>Kg cosechados <input name="kgHarvested" type="text" inputmode="decimal" required /></label>
+              <label>Precio por tonelada <input name="priceTon" type="text" inputmode="decimal" /></label>
+              <label>Otros costos <input name="otherCosts" type="text" inputmode="decimal" value="0" /></label>
               <div class="form-actions">
                 <button id="closureSubmitButton" type="submit">Guardar cierre</button>
                 <button class="link-button hidden-panel" id="cancelClosureEdit" type="button">Cancelar edición</button>
@@ -547,7 +551,7 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="data.js?v=20260522-omar-soja-2da"></script>
-    <script src="app.js?v=20260522-omar-soja-2da"></script>
+    <script src="data.js?v=20260601-omar-editar-deposito"></script>
+    <script src="app.js?v=20260601-omar-editar-deposito"></script>
   </body>
 </html>

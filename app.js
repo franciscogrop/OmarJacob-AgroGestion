@@ -46,6 +46,7 @@ let orderFilter = "Todas";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
 let editingLotId = "";
+let editingProductId = "";
 let editingOrderId = "";
 let editingMonitorId = "";
 let editingApplicationKey = "";
@@ -403,6 +404,23 @@ function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function parseDecimal(value, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  let text = String(value ?? "").trim().replace(/\s/g, "");
+  if (!text) return fallback;
+  const comma = text.lastIndexOf(",");
+  const dot = text.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const decimalSeparator = comma > dot ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    text = text.replaceAll(thousandsSeparator, "").replace(decimalSeparator, ".");
+  } else {
+    text = text.replace(",", ".");
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function money(value) {
   return `u$s ${Number(value || 0).toLocaleString("es-AR", {
     minimumFractionDigits: 2,
@@ -686,16 +704,16 @@ function getOrCreateManualProduct(name, lotId = "") {
 
 function syncApplicationQuantityFromDose(form = document.querySelector("#applicationForm")) {
   if (!form?.elements?.dose || !form.elements.hectares || !form.elements.usedQuantity) return;
-  const dose = Number(form.elements.dose.value || 0);
-  const hectares = Number(form.elements.hectares.value || 0);
+  const dose = parseDecimal(form.elements.dose.value);
+  const hectares = parseDecimal(form.elements.hectares.value);
   if (!dose || !hectares) return;
   form.elements.usedQuantity.value = (dose * hectares).toFixed(2);
 }
 
 function syncApplicationDoseFromQuantity(form = document.querySelector("#applicationForm")) {
   if (!form?.elements?.dose || !form.elements.hectares || !form.elements.usedQuantity) return;
-  const quantity = Number(form.elements.usedQuantity.value || 0);
-  const hectares = Number(form.elements.hectares.value || 0);
+  const quantity = parseDecimal(form.elements.usedQuantity.value);
+  const hectares = parseDecimal(form.elements.hectares.value);
   if (!quantity || !hectares) return;
   form.elements.dose.value = (quantity / hectares).toFixed(4);
 }
@@ -1987,6 +2005,45 @@ function returnApplicationStock(application) {
   return application;
 }
 
+function recalculateApplicationsForProduct(product) {
+  data.applications.forEach((application) => {
+    if (!productMatchesApplication(product, application)) return;
+    const usedQuantity = parseDecimal(application.usedQuantity);
+    const laborCostTotal = parseDecimal(application.laborCostTotal);
+    application.productName = product.name;
+    application.unitCost = parseDecimal(product.unitCost);
+    application.productCost = usedQuantity * application.unitCost;
+    application.totalCost = application.productCost + laborCostTotal;
+    queueSync("applications", application, "update");
+  });
+}
+
+function editProduct(productId) {
+  const product = data.products.find((item) => item.id === productId);
+  const form = document.querySelector("#productForm");
+  if (!product || !form) return;
+  editingProductId = productId;
+  form.elements.name.value = product.name || "";
+  form.elements.type.value = product.type || "Otro";
+  form.elements.unit.value = product.unit || "";
+  form.elements.quantity.value = product.quantity ?? "";
+  form.elements.unitCost.value = product.unitCost ?? "";
+  form.elements.warehouse.value = product.warehouse || "";
+  document.querySelector("#productFormTitle").textContent = "Editar producto";
+  form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cancelProductEdit() {
+  const form = document.querySelector("#productForm");
+  editingProductId = "";
+  if (form) resetForm(form);
+  document.querySelector("#productFormTitle").textContent = "Nuevo producto";
+  if (form) form.querySelector('button[type="submit"]').textContent = "Guardar producto";
+  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+}
+
 function renderProducts() {
   document.querySelector("#productsTable").innerHTML = data.products
     .map((product) => {
@@ -2001,10 +2058,15 @@ function renderProducts() {
         <td>${money(product.unitCost)}</td>
         <td>${money(stock.available * product.unitCost)}</td>
         <td>${product.warehouse || "-"} · ${statusBadge(product.status || "OK")}</td>
+        <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
     `;
     })
-    .join("") || `<tr><td colspan="8">No hay productos cargados.</td></tr>`;
+    .join("") || `<tr><td colspan="9">No hay productos cargados.</td></tr>`;
+
+  document.querySelectorAll("[data-edit-product]").forEach((button) => {
+    button.addEventListener("click", () => editProduct(button.dataset.editProduct));
+  });
 }
 
 function costCategory(type) {
@@ -2309,11 +2371,11 @@ function renderCampaignDetail() {
             <option ${ensoNormalized === "neutral" ? "selected" : ""}>Neutral</option>
           </select>
         </label>
-        <label>Ha cosechadas <input name="hectares" type="number" min="0" step="0.01" value="${hectares || ""}" /></label>
-        <label>Kg cosechados <input name="kgHarvested" type="number" min="0" step="1" value="${kgHarvested || ""}" /></label>
-        <label>Precio por tonelada <input name="priceTon" type="number" min="0" step="0.01" value="${priceTon || ""}" /></label>
-        <label>Otros costos <input name="otherCosts" type="number" min="0" step="0.01" value="${otherCosts || 0}" /></label>
-        <label>Costos aplicación <input name="applicationCosts" type="number" min="0" step="0.01" value="${applicationCosts}" placeholder="Automático o manual" /></label>
+        <label>Ha cosechadas <input name="hectares" type="text" inputmode="decimal" value="${hectares || ""}" /></label>
+        <label>Kg cosechados <input name="kgHarvested" type="text" inputmode="decimal" value="${kgHarvested || ""}" /></label>
+        <label>Precio por tonelada <input name="priceTon" type="text" inputmode="decimal" value="${priceTon || ""}" /></label>
+        <label>Otros costos <input name="otherCosts" type="text" inputmode="decimal" value="${otherCosts || 0}" /></label>
+        <label>Costos aplicación <input name="applicationCosts" type="text" inputmode="decimal" value="${applicationCosts}" placeholder="Automático o manual" /></label>
         <div class="form-actions">
           <button type="submit">${editing ? "Guardar cambios" : "Agregar a campaña"}</button>
           ${editing ? `<button class="link-button" id="cancelCampaignEdit" type="button">Cancelar</button>` : ""}
@@ -2337,11 +2399,11 @@ function saveCampaignDetailRecord(event) {
     return;
   }
   const existing = editingCampaignClosureId ? data.closures.find((closure) => closure.id === editingCampaignClosureId) : null;
-  const hectares = Number(values.hectares || 0);
-  const kgHarvested = values.kgHarvested === "" ? "" : Number(values.kgHarvested);
-  const priceTon = values.priceTon === "" ? "" : Number(values.priceTon);
-  const otherCosts = Number(values.otherCosts || 0);
-  const manualApplicationCosts = values.applicationCosts === "" ? "" : Number(values.applicationCosts);
+  const hectares = parseDecimal(values.hectares);
+  const kgHarvested = values.kgHarvested === "" ? "" : parseDecimal(values.kgHarvested);
+  const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
+  const otherCosts = parseDecimal(values.otherCosts);
+  const manualApplicationCosts = values.applicationCosts === "" ? "" : parseDecimal(values.applicationCosts);
   const applicationCosts = manualApplicationCosts === "" ? (existing?.applicationCosts ?? applicationCostForLot(lot.id)) : manualApplicationCosts;
   const income = kgHarvested && priceTon ? (kgHarvested / 1000) * priceTon : "";
   const grossMargin = income === "" ? "" : income - otherCosts - Number(applicationCosts || 0);
@@ -2822,7 +2884,7 @@ function bindForms() {
   document.querySelector("#lotForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
-    const record = { id: editingLotId || uid("lot"), ...values, hectares: Number(values.hectares) };
+    const record = { id: editingLotId || uid("lot"), ...values, hectares: parseDecimal(values.hectares) };
     if (editingLotId) {
       const index = data.lots.findIndex((lot) => lot.id === editingLotId);
       if (index >= 0) {
@@ -2844,14 +2906,33 @@ function bindForms() {
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
-    const record = { id: uid("prod"), ...values, quantity: Number(values.quantity), unitCost: Number(values.unitCost) };
-    data.products.push(record);
-    queueSync("products", record);
+    const existing = editingProductId ? data.products.find((product) => product.id === editingProductId) : null;
+    const record = {
+      ...(existing || {}),
+      id: existing?.id || uid("prod"),
+      ...values,
+      quantity: parseDecimal(values.quantity),
+      unitCost: parseDecimal(values.unitCost)
+    };
+    if (existing) {
+      const index = data.products.findIndex((product) => product.id === existing.id);
+      if (index >= 0) data.products[index] = record;
+      queueSync("products", record, "update");
+      recalculateApplicationsForProduct(record);
+    } else {
+      data.products.push(record);
+      queueSync("products", record);
+    }
     saveData();
+    editingProductId = "";
     resetForm(event.currentTarget);
+    document.querySelector("#productFormTitle").textContent = "Nuevo producto";
+    event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar producto";
+    document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
     renderAll();
-    showToast("Producto guardado");
+    showToast(existing ? "Producto y costos actualizados" : "Producto guardado");
   });
+  document.querySelector("#cancelProductEdit")?.addEventListener("click", cancelProductEdit);
 
   const orderForm = document.querySelector("#orderForm");
   orderForm.elements.lotId.addEventListener("change", () => {
@@ -2887,8 +2968,8 @@ function bindForms() {
     const values = formData(event.currentTarget);
     delete values.taskPreset;
     delete values.ownerPreset;
-    const plannedHectares = Number(values.plannedHectares || 0);
-    const laborCostHa = Number(values.laborCostHa || 0);
+    const plannedHectares = parseDecimal(values.plannedHectares);
+    const laborCostHa = parseDecimal(values.laborCostHa);
     const record = {
       id: editingOrderId || uid("ord"),
       ...values,
@@ -3002,10 +3083,10 @@ function bindForms() {
     }
     values.productId = product.id;
     delete values.manualProductName;
-    const hectares = Number(values.hectares);
-    const quantityFromInput = values.usedQuantity === "" ? 0 : Number(values.usedQuantity);
-    const dose = quantityFromInput && hectares ? quantityFromInput / hectares : Number(values.dose);
-    const laborCostHa = Number(values.laborCostHa);
+    const hectares = parseDecimal(values.hectares);
+    const quantityFromInput = values.usedQuantity === "" ? 0 : parseDecimal(values.usedQuantity);
+    const dose = quantityFromInput && hectares ? quantityFromInput / hectares : parseDecimal(values.dose);
+    const laborCostHa = parseDecimal(values.laborCostHa);
     const usedQuantity = quantityFromInput || (dose * hectares);
     const productCost = usedQuantity * Number(product?.unitCost || 0);
     const laborCost = laborCostHa * hectares;
@@ -3084,10 +3165,10 @@ function bindForms() {
     event.preventDefault();
     const values = formData(event.currentTarget);
     const existing = editingClosureId ? data.closures.find((closure) => closure.id === editingClosureId) : null;
-    const hectares = Number(values.hectares);
-    const kgHarvested = Number(values.kgHarvested);
-    const priceTon = values.priceTon === "" ? "" : Number(values.priceTon);
-    const otherCosts = values.otherCosts === "" ? "" : Number(values.otherCosts);
+    const hectares = parseDecimal(values.hectares);
+    const kgHarvested = parseDecimal(values.kgHarvested);
+    const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
+    const otherCosts = values.otherCosts === "" ? "" : parseDecimal(values.otherCosts);
     const applicationCosts = applicationCostForLot(values.lotId);
     const income = priceTon === "" ? "" : (kgHarvested / 1000) * priceTon;
     const grossMargin = income === "" ? "" : income - Number(otherCosts || 0) - Number(applicationCosts || 0);
