@@ -487,11 +487,16 @@ function receiptLabels(product) {
   return [...new Set(receiptEntries(product).map((entry) => entry.number).filter(Boolean))];
 }
 
-function appendReceiptEntry(current, receiptNumber, quantity, unitCost) {
+function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost) {
   const incoming = String(receiptNumber || "").trim();
   if (!incoming) return String(current || "").trim();
-  const entry = [incoming, todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
+  const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
   return [String(current || "").trim(), entry].filter(Boolean).join("\n");
+}
+
+function hasReceiptNumber(product, receiptNumber) {
+  const normalized = normalizeName(receiptNumber);
+  return normalized && receiptLabels(product).some((number) => normalizeName(number) === normalized);
 }
 
 function serializeReceiptEntries(entries) {
@@ -2152,6 +2157,28 @@ function saveReceiptEdit(index) {
   showToast("Remito actualizado");
 }
 
+function deleteReceipt(index) {
+  const product = data.products.find((item) => item.id === selectedProductId);
+  const entries = receiptEntries(product);
+  const removed = entries[index];
+  if (!product || !removed) return;
+  const detail = removed.detailed
+    ? `Se restarán ${number(removed.quantity, 2)} ${product.unit || ""} del stock físico.`
+    : "Es un antecedente sin cantidad discriminada: se quitará el número de remito sin modificar el stock.";
+  if (!window.confirm(`¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
+  entries.splice(index, 1);
+  if (removed.detailed) product.quantity = parseDecimal(product.quantity) - parseDecimal(removed.quantity);
+  product.receiptNumbers = serializeReceiptEntries(entries);
+  delete product.calculatedStock;
+  delete product.applicationUse;
+  queueSync("products", product, "update");
+  saveData();
+  editingReceiptIndex = -1;
+  renderAll();
+  renderProductDetail();
+  showToast("Remito eliminado");
+}
+
 function renderProductDetail() {
   const product = data.products.find((item) => item.id === selectedProductId);
   const panel = document.querySelector("#productDetailPanel");
@@ -2206,7 +2233,7 @@ function renderProductDetail() {
                 <td>${entry.number}</td>
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
-                <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button></td>
+                <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${index}" type="button">Eliminar</button></td>
               </tr>`).join("") || `<tr><td colspan="4">Todavía no hay ingresos identificados por remito.</td></tr>`}
             </tbody>
           </table>
@@ -2233,6 +2260,7 @@ function renderProductDetail() {
   `;
   detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
   detail.querySelectorAll("[data-edit-receipt]").forEach((button) => button.addEventListener("click", () => editReceipt(Number(button.dataset.editReceipt))));
+  detail.querySelectorAll("[data-delete-receipt]").forEach((button) => button.addEventListener("click", () => deleteReceipt(Number(button.dataset.deleteReceipt))));
   detail.querySelector("[data-cancel-receipt-edit]")?.addEventListener("click", () => {
     editingReceiptIndex = -1;
     renderProductDetail();
@@ -2249,6 +2277,9 @@ function renderProducts() {
   const catalog = [...new Set(data.products.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const catalogList = document.querySelector("#productCatalogList");
   if (catalogList) catalogList.innerHTML = catalog.map((name) => `<option value="${name}"></option>`).join("");
+  const receiptCatalog = [...new Set(data.products.flatMap(receiptLabels))].sort((a, b) => a.localeCompare(b, "es"));
+  const receiptCatalogList = document.querySelector("#receiptCatalogList");
+  if (receiptCatalogList) receiptCatalogList.innerHTML = receiptCatalog.map((number) => `<option value="${number}"></option>`).join("");
   const filteredProducts = data.products.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
     if (receiptFilter && !normalizeName(receiptText(product)).includes(receiptFilter)) return false;
@@ -3133,9 +3164,13 @@ function bindForms() {
       ? data.products.find((product) => product.id === editingProductId)
       : matchingProductByName(values.name);
     const isNewIngreso = !editingProductId && Boolean(existing);
+    if (!editingProductId && existing && values.receiptNumber && hasReceiptNumber(existing, values.receiptNumber)) {
+      showToast("Ese remito ya está cargado para este producto");
+      return;
+    }
     const receiptNumbers = editingProductId
       ? receiptText(existing)
-      : appendReceiptEntry(receiptText(existing), values.receiptNumber, values.quantity, values.unitCost);
+      : appendReceiptEntry(receiptText(existing), values.receiptNumber, values.receiptDate, values.quantity, values.unitCost);
     const record = {
       ...(existing || {}),
       id: existing?.id || uid("prod"),
@@ -3145,6 +3180,7 @@ function bindForms() {
       receiptNumbers
     };
     delete record.receiptNumber;
+    delete record.receiptDate;
     delete record.calculatedStock;
     delete record.applicationUse;
     if (existing) {
@@ -3159,6 +3195,7 @@ function bindForms() {
     saveData();
     editingProductId = "";
     resetForm(event.currentTarget);
+    event.currentTarget.elements.receiptDate.value = todayValue();
     document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
     document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
     event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
@@ -3170,6 +3207,7 @@ function bindForms() {
   document.querySelector("#productForm")?.elements?.name?.addEventListener("change", applyExistingProductDefaults);
   document.querySelector("#productNameFilter")?.addEventListener("input", renderProducts);
   document.querySelector("#productReceiptFilter")?.addEventListener("input", renderProducts);
+  document.querySelector("#productForm").elements.receiptDate.value = todayValue();
 
   const orderForm = document.querySelector("#orderForm");
   orderForm.elements.lotId.addEventListener("change", () => {
