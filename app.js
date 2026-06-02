@@ -47,6 +47,7 @@ let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
 let editingLotId = "";
 let editingProductId = "";
+let selectedProductId = "";
 let editingOrderId = "";
 let editingMonitorId = "";
 let editingApplicationKey = "";
@@ -464,6 +465,50 @@ function normalizeName(value) {
     .trim();
 }
 
+function receiptText(product) {
+  return String(product?.receiptNumbers || product?.receiptNumber || "").trim();
+}
+
+function receiptEntries(product) {
+  return String(receiptText(product) || "").split(/\r?\n/).flatMap((line) => {
+    const value = line.trim();
+    if (!value) return [];
+    if (value.includes("|")) {
+      const [number, date, quantity, unitCost] = value.split("|");
+      return [{ number, date, quantity, unitCost, detailed: true }];
+    }
+    return value.split(",").map((number) => ({ number: number.trim(), detailed: false })).filter((entry) => entry.number);
+  });
+}
+
+function receiptLabels(product) {
+  return [...new Set(receiptEntries(product).map((entry) => entry.number).filter(Boolean))];
+}
+
+function appendReceiptEntry(current, receiptNumber, quantity, unitCost) {
+  const incoming = String(receiptNumber || "").trim();
+  if (!incoming) return String(current || "").trim();
+  const entry = [incoming, todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
+  return [String(current || "").trim(), entry].filter(Boolean).join("\n");
+}
+
+function matchingProductByName(name, excludedId = "") {
+  const normalized = normalizeName(name);
+  if (!normalized) return null;
+  return data.products.find((product) => product.id !== excludedId && normalizeName(product.name) === normalized) || null;
+}
+
+function applyExistingProductDefaults() {
+  if (editingProductId) return;
+  const form = document.querySelector("#productForm");
+  const product = matchingProductByName(form?.elements?.name?.value);
+  if (!form || !product) return;
+  form.elements.type.value = product.type || "Otro";
+  form.elements.unit.value = product.unit || "";
+  form.elements.unitCost.value = product.unitCost ?? "";
+  form.elements.warehouse.value = product.warehouse || "";
+}
+
 function displayLotName(lot) {
   if (!lot) return "Sin lote";
   const name = String(lot.name || "").trim();
@@ -531,7 +576,7 @@ function productMatchesApplication(product, application) {
 }
 
 function baseStock(product) {
-  return Number(product.calculatedStock ?? product.quantity ?? 0);
+  return parseDecimal(product.quantity ?? product.calculatedStock);
 }
 
 function stockForProduct(product) {
@@ -2029,7 +2074,9 @@ function editProduct(productId) {
   form.elements.quantity.value = product.quantity ?? "";
   form.elements.unitCost.value = product.unitCost ?? "";
   form.elements.warehouse.value = product.warehouse || "";
+  form.elements.receiptNumber.value = "";
   document.querySelector("#productFormTitle").textContent = "Editar producto";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2039,17 +2086,103 @@ function cancelProductEdit() {
   const form = document.querySelector("#productForm");
   editingProductId = "";
   if (form) resetForm(form);
-  document.querySelector("#productFormTitle").textContent = "Nuevo producto";
-  if (form) form.querySelector('button[type="submit"]').textContent = "Guardar producto";
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
 }
 
+function closeProductDetail() {
+  selectedProductId = "";
+  document.querySelector("#productDetailPanel")?.classList.add("hidden-panel");
+  document.querySelector("#productDetail").innerHTML = "";
+}
+
+function renderProductDetail() {
+  const product = data.products.find((item) => item.id === selectedProductId);
+  const panel = document.querySelector("#productDetailPanel");
+  const detail = document.querySelector("#productDetail");
+  if (!panel || !detail) return;
+  if (!product) {
+    closeProductDetail();
+    return;
+  }
+  const stock = stockForProduct(product);
+  const entries = receiptEntries(product);
+  const outputs = data.applications
+    .filter((application) => productMatchesApplication(product, application))
+    .map((application) => ({ application, order: orderById(application.orderId) }))
+    .sort((a, b) => String(b.application.date || b.order?.date || "").localeCompare(String(a.application.date || a.order?.date || "")));
+  panel.classList.remove("hidden-panel");
+  detail.innerHTML = `
+    <div class="application-detail-header">
+      <div>
+        <strong>${product.name}</strong>
+        <span>${product.type || "-"} · ${product.warehouse || "-"}</span>
+      </div>
+      <div class="application-detail-kpis">
+        <span>Físico ${number(stock.physical, 2)} ${product.unit || ""}</span>
+        <span>Reservado ${number(stock.reserved, 2)} ${product.unit || ""}</span>
+        <span>Disponible ${number(stock.available, 2)} ${product.unit || ""}</span>
+      </div>
+      <button class="link-button" data-close-product-detail type="button">Cerrar</button>
+    </div>
+    <div class="deposit-detail-grid">
+      <div>
+        <h3>Ingresos al depósito</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Remito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
+            <tbody>
+              ${entries.map((entry) => `<tr>
+                <td>${entry.number}</td>
+                <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
+                <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
+                <td>${entry.detailed ? money(entry.unitCost) : "-"}</td>
+              </tr>`).join("") || `<tr><td colspan="4">Todavía no hay ingresos identificados por remito.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h3>Salidas vinculadas a órdenes</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Orden</th><th>Lote</th><th>Estado</th><th>Cantidad</th></tr></thead>
+            <tbody>
+              ${outputs.map(({ application, order }) => `<tr>
+                <td>${dateShort(application.date || order?.date)}</td>
+                <td>${order?.id || application.orderId || "-"}</td>
+                <td>${lotName(application.lotId || order?.lotId)}</td>
+                <td>${order?.status || "Aplicada"}</td>
+                <td>${number(application.usedQuantity, 2)} ${product.unit || ""}</td>
+              </tr>`).join("") || `<tr><td colspan="5">No hay salidas vinculadas a órdenes.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+  detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
+}
+
 function renderProducts() {
-  document.querySelector("#productsTable").innerHTML = data.products
+  const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
+  const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
+  const catalog = [...new Set(data.products.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const catalogList = document.querySelector("#productCatalogList");
+  if (catalogList) catalogList.innerHTML = catalog.map((name) => `<option value="${name}"></option>`).join("");
+  const filteredProducts = data.products.filter((product) => {
+    if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
+    if (receiptFilter && !normalizeName(receiptText(product)).includes(receiptFilter)) return false;
+    return true;
+  });
+
+  document.querySelector("#productsTable").innerHTML = filteredProducts
     .map((product) => {
       const stock = stockForProduct(product);
       return `
-      <tr>
+      <tr class="clickable-row" data-open-product="${product.id}">
         <td>${product.name} ${syncBadge(product)}</td>
         <td>${product.type}</td>
         <td>${number(stock.physical, 2)} ${product.unit}</td>
@@ -2058,15 +2191,27 @@ function renderProducts() {
         <td>${money(product.unitCost)}</td>
         <td>${money(stock.available * product.unitCost)}</td>
         <td>${product.warehouse || "-"} · ${statusBadge(product.status || "OK")}</td>
+        <td>${receiptLabels(product).join(", ") || "-"}</td>
         <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
     `;
     })
-    .join("") || `<tr><td colspan="9">No hay productos cargados.</td></tr>`;
+    .join("") || `<tr><td colspan="10">No hay productos para mostrar.</td></tr>`;
 
   document.querySelectorAll("[data-edit-product]").forEach((button) => {
-    button.addEventListener("click", () => editProduct(button.dataset.editProduct));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      editProduct(button.dataset.editProduct);
+    });
   });
+  document.querySelectorAll("#productsTable tr[data-open-product]").forEach((row) => {
+    row.addEventListener("click", () => {
+      selectedProductId = row.dataset.openProduct;
+      renderProductDetail();
+      document.querySelector("#productDetailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  renderProductDetail();
 }
 
 function costCategory(type) {
@@ -2906,14 +3051,24 @@ function bindForms() {
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
-    const existing = editingProductId ? data.products.find((product) => product.id === editingProductId) : null;
+    const existing = editingProductId
+      ? data.products.find((product) => product.id === editingProductId)
+      : matchingProductByName(values.name);
+    const isNewIngreso = !editingProductId && Boolean(existing);
+    const receiptNumbers = editingProductId
+      ? receiptText(existing)
+      : appendReceiptEntry(receiptText(existing), values.receiptNumber, values.quantity, values.unitCost);
     const record = {
       ...(existing || {}),
       id: existing?.id || uid("prod"),
       ...values,
-      quantity: parseDecimal(values.quantity),
-      unitCost: parseDecimal(values.unitCost)
+      quantity: isNewIngreso ? parseDecimal(existing.quantity) + parseDecimal(values.quantity) : parseDecimal(values.quantity),
+      unitCost: parseDecimal(values.unitCost),
+      receiptNumbers
     };
+    delete record.receiptNumber;
+    delete record.calculatedStock;
+    delete record.applicationUse;
     if (existing) {
       const index = data.products.findIndex((product) => product.id === existing.id);
       if (index >= 0) data.products[index] = record;
@@ -2926,13 +3081,17 @@ function bindForms() {
     saveData();
     editingProductId = "";
     resetForm(event.currentTarget);
-    document.querySelector("#productFormTitle").textContent = "Nuevo producto";
-    event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar producto";
+    document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+    document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+    event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
     document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
     renderAll();
-    showToast(existing ? "Producto y costos actualizados" : "Producto guardado");
+    showToast(isNewIngreso ? "Ingreso sumado al producto existente" : existing ? "Producto y costos actualizados" : "Producto guardado");
   });
   document.querySelector("#cancelProductEdit")?.addEventListener("click", cancelProductEdit);
+  document.querySelector("#productForm")?.elements?.name?.addEventListener("change", applyExistingProductDefaults);
+  document.querySelector("#productNameFilter")?.addEventListener("input", renderProducts);
+  document.querySelector("#productReceiptFilter")?.addEventListener("input", renderProducts);
 
   const orderForm = document.querySelector("#orderForm");
   orderForm.elements.lotId.addEventListener("change", () => {

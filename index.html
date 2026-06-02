@@ -340,9 +340,9 @@
 
         <section class="view" id="stock">
           <section class="form-band">
-            <h2 id="productFormTitle">Nuevo producto</h2>
+            <h2 id="productFormTitle">Nuevo ingreso al depósito</h2>
             <form id="productForm" class="form-grid">
-              <label>Producto <input name="name" required placeholder="Glifosato" /></label>
+              <label>Producto <input name="name" list="productCatalogList" required placeholder="Elegí uno cargado o escribí uno nuevo" /></label>
               <label>Tipo
                 <select name="type">
                   <option>Herbicida</option>
@@ -354,11 +354,12 @@
                 </select>
               </label>
               <label>Unidad <input name="unit" required placeholder="lt, kg, bolsa" /></label>
-              <label>Stock <input name="quantity" type="text" inputmode="decimal" required /></label>
+              <label id="productQuantityLabel">Cantidad a ingresar <input name="quantity" type="text" inputmode="decimal" required /></label>
               <label>Costo unitario <input name="unitCost" type="text" inputmode="decimal" required /></label>
               <label>Depósito <input name="warehouse" placeholder="Galpón principal" /></label>
+              <label>Nro. de remito <input name="receiptNumber" placeholder="Ej. R-1548" /></label>
               <div class="form-actions">
-                <button type="submit">Guardar producto</button>
+                <button type="submit">Guardar ingreso</button>
                 <button class="link-button hidden-panel" id="cancelProductEdit" type="button">Cancelar edición</button>
               </div>
             </form>
@@ -366,6 +367,10 @@
           <section class="panel">
             <div class="panel-header">
               <h2>Productos en depósito</h2>
+              <div class="deposit-filters">
+                <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
+                <label>Remito <input id="productReceiptFilter" placeholder="Todos" /></label>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -379,12 +384,16 @@
                     <th>Costo unit.</th>
                     <th>Valorizado</th>
                     <th>Depósito</th>
+                    <th>Remitos</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="productsTable"></tbody>
               </table>
             </div>
+          </section>
+          <section class="panel product-detail-panel hidden-panel" id="productDetailPanel">
+            <div id="productDetail" class="application-detail"></div>
           </section>
         </section>
 
@@ -551,7 +560,8 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="data.js?v=20260601-omar-editar-deposito"></script>
-    <script src="app.js?v=20260601-omar-editar-deposito"></script>
+    <datalist id="productCatalogList"></datalist>
+    <script src="data.js?v=20260602-ficha-deposito"></script>
+    <script src="app.js?v=20260602-ficha-deposito"></script>
   </body>
 </html>
