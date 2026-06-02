@@ -1761,8 +1761,9 @@ function renderApplicationDetail(applicationId) {
   detail.innerHTML = `
     <div class="application-detail-header">
       <div class="application-order-heading">
-        <span class="application-order-label">Orden para contratista</span>
-        <strong>${service}</strong>
+        <span class="application-order-label">Numero de orden</span>
+        <span class="application-order-number">${applicationId}${linkedOrder?.id ? ` - ${linkedOrder.id}` : ""}</span>
+        <strong>${lotName(first.lotId)}</strong>
         <span>${applicationId}${linkedOrder?.id ? ` · ${linkedOrder.id}` : ""}</span>
       </div>
       <div class="detail-actions application-share-actions">

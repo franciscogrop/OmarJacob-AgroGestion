@@ -441,14 +441,14 @@ h2 {
   justify-content: space-between;
   align-items: flex-start;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 18px 20px 12px;
   background: #fffaf0;
   border-bottom: 1px solid var(--line);
 }
 
 .application-order-heading {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .application-order-label {
@@ -459,13 +459,24 @@ h2 {
   text-transform: uppercase;
 }
 
+.application-order-number {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.application-order-heading > span:not(.application-order-label):not(.application-order-number) {
+  display: none;
+}
+
 .application-detail-header strong,
 .application-detail-header span {
   display: block;
 }
 
 .application-detail-header strong {
-  font-size: 18px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.02;
 }
 
 .application-detail-header span,
@@ -484,9 +495,9 @@ h2 {
 
 .application-order-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: 1.25fr 1.25fr repeat(3, minmax(120px, 1fr));
   gap: 10px;
-  padding: 14px 18px;
+  padding: 12px 18px 16px;
   background: #fffaf0;
   border-bottom: 1px solid var(--line);
 }
@@ -509,8 +520,13 @@ h2 {
 .application-order-summary strong {
   display: block;
   margin: 3px 0 4px;
-  font-size: 16px;
-  line-height: 1.2;
+  font-size: 17px;
+  line-height: 1.16;
+}
+
+.application-order-summary article:nth-child(1) strong,
+.application-order-summary article:nth-child(2) strong {
+  font-size: 22px;
 }
 
 .application-share-actions {
