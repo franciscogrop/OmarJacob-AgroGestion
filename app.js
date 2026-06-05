@@ -698,7 +698,14 @@ function lotHectares(lotId) {
 }
 
 function lotCrop(lotId) {
-  return data.lots.find((lot) => lot.id === lotId)?.crop || "";
+  const lot = data.lots.find((item) => item.id === lotId);
+  if (!lot) return "";
+  if (lot.crop) return lot.crop;
+  return data.closures.find((closure) => (
+    sameLot(closure, lot)
+    && closure.campaign === lot.campaign
+    && closure.crop
+  ))?.crop || "";
 }
 
 function lotVariety(lotId) {
@@ -1358,7 +1365,15 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
     button.addEventListener("click", () => {
       switchView(button.dataset.mapAction);
       const select = document.querySelector(`#${button.dataset.mapAction} select[name="lotId"]`);
-      if (select) select.value = button.dataset.lotId;
+      if (select) {
+        select.value = button.dataset.lotId;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        const form = select.form;
+        applyLotDefaultCrop(form, true);
+        applyLotDefaultVariety(form, true);
+        if (button.dataset.mapAction === "ordenes") applyOrderLotDefaultHectares(true);
+        if (button.dataset.mapAction === "cierre") applyClosureDefaults(form, true);
+      }
     });
   });
   target.querySelectorAll("[data-open-order-detail]").forEach((row) => {
@@ -3395,6 +3410,7 @@ function bindForms() {
 
   document.querySelector("#applicationForm").addEventListener("submit", (event) => {
     event.preventDefault();
+    const wasEditingApplication = Boolean(editingApplicationKey);
     const values = formData(event.currentTarget);
     const product = values.productId === "__manual__"
       ? getOrCreateManualProduct(values.manualProductName, values.lotId)
@@ -3480,7 +3496,17 @@ function bindForms() {
       toggleManualProductInput(event.currentTarget);
     }
     renderAll();
-    showToast("Aplicación guardada y stock actualizado");
+    if (wasEditingApplication) {
+      highlightedApplicationId = applicationId;
+      applicationDraftOrderId = "";
+      document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
+      switchView("aplicaciones");
+      renderApplications();
+      window.setTimeout(() => {
+        document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+    showToast(wasEditingApplication ? "Aplicación actualizada" : "Aplicación guardada y stock actualizado");
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
