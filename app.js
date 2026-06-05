@@ -55,6 +55,9 @@ let editingApplicationKey = "";
 let selectedMapPolygonId = "";
 let selectedOrderId = "";
 let orderDetailBackView = "ordenes";
+let orderDetailBackLotId = "";
+let applicationBackView = "ordenes";
+let applicationBackLotId = "";
 let selectedHistoryCrop = "";
 let selectedHistoryLotId = "";
 let selectedCampaignLotId = "";
@@ -1047,6 +1050,7 @@ function cancelLotEdit() {
 }
 
 function openLotDetail(lotId) {
+  orderDetailBackLotId = lotId;
   renderLotDetail(lotId, "#fullLotDetail");
   switchView("ficha-lote");
 }
@@ -1501,6 +1505,8 @@ function renderOrders() {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       highlightedApplicationId = button.dataset.openApplication;
+      applicationBackView = "ordenes";
+      applicationBackLotId = "";
       switchView("aplicaciones");
       renderApplications();
       showToast(`Mostrando ${highlightedApplicationId}`);
@@ -1532,6 +1538,10 @@ function renderOrders() {
 function openOrderDetail(orderId, backView = "ordenes") {
   selectedOrderId = orderId;
   orderDetailBackView = backView;
+  const order = orderById(orderId);
+  orderDetailBackLotId = backView === "ficha-lote" ? order?.lotId || orderDetailBackLotId : "";
+  const backButton = document.querySelector("#backFromOrderDetail");
+  if (backButton) backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : "Volver a órdenes";
   renderOrderDetail(orderId);
   switchView("ficha-orden");
 }
@@ -1599,6 +1609,8 @@ function renderOrderDetail(orderId) {
   detail.querySelector("[data-add-application]")?.addEventListener("click", () => openApplicationFormFromOrder(order.id));
   detail.querySelector("[data-open-application]")?.addEventListener("click", () => {
     highlightedApplicationId = applicationId;
+    applicationBackView = orderDetailBackView === "ficha-lote" ? "ficha-lote" : "ordenes";
+    applicationBackLotId = applicationBackView === "ficha-lote" ? order.lotId : "";
     switchView("aplicaciones");
     renderApplications();
   });
@@ -1723,7 +1735,9 @@ function renderApplications() {
     .join("") || `<tr><td colspan="6">No hay aplicaciones para mostrar.</td></tr>`;
 
   renderApplicationDetail(highlightedApplicationId);
-  document.querySelector("#backToOrders").style.display = highlightedApplicationId ? "inline-flex" : "none";
+  const backButton = document.querySelector("#backToOrders");
+  backButton.style.display = highlightedApplicationId ? "inline-flex" : "none";
+  backButton.textContent = applicationBackView === "ficha-lote" ? "Volver al lote" : "Volver a órdenes";
   document.querySelectorAll("[data-open-application-detail]").forEach((row) => {
     row.addEventListener("click", () => {
       highlightedApplicationId = row.dataset.openApplicationDetail;
@@ -3356,9 +3370,8 @@ function bindForms() {
     }
     saveData();
     resetForm(event.currentTarget);
-    applyLotDefaultCrop(event.currentTarget, true);
-    applyLotDefaultVariety(event.currentTarget, true);
     renderAll();
+    openMonitorDetail(record.id);
     showToast("Monitoreo guardado");
   });
 
@@ -3560,13 +3573,21 @@ function bindApplicationTools() {
   document.querySelector("#showAllApplications").addEventListener("click", () => {
     highlightedApplicationId = "";
     applicationDraftOrderId = "";
+    applicationBackView = "ordenes";
+    applicationBackLotId = "";
     renderApplications();
   });
   document.querySelector("#backToOrders").addEventListener("click", () => {
     highlightedApplicationId = "";
     applicationDraftOrderId = "";
     renderApplications();
-    switchView("ordenes");
+    if (applicationBackView === "ficha-lote" && applicationBackLotId) {
+      openLotDetail(applicationBackLotId);
+    } else {
+      switchView("ordenes");
+    }
+    applicationBackView = "ordenes";
+    applicationBackLotId = "";
   });
 }
 
@@ -3580,7 +3601,13 @@ function bindMonitorTools() {
 
 function bindLotTools() {
   document.querySelector("#backToLots").addEventListener("click", () => switchView("lotes"));
-  document.querySelector("#backFromOrderDetail")?.addEventListener("click", () => switchView(orderDetailBackView || "ordenes"));
+  document.querySelector("#backFromOrderDetail")?.addEventListener("click", () => {
+    if (orderDetailBackView === "ficha-lote" && orderDetailBackLotId) {
+      openLotDetail(orderDetailBackLotId);
+    } else {
+      switchView(orderDetailBackView || "ordenes");
+    }
+  });
   document.querySelector("#cancelLotEdit")?.addEventListener("click", cancelLotEdit);
 }
 
