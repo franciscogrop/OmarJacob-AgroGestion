@@ -171,7 +171,6 @@ function enrichRecordForSync(record) {
   const enriched = { ...record };
   if (enriched.lotId && !enriched.lotName) enriched.lotName = lotName(enriched.lotId);
   if (enriched.productId && !enriched.productName) enriched.productName = productName(enriched.productId);
-  if (String(enriched.photo || "").startsWith("data:image")) enriched.photo = "Foto cargada en app";
   return enriched;
 }
 
@@ -835,28 +834,52 @@ function fillOptionSelect(selector, options, placeholder) {
   });
 }
 
-function readImageAsDataUrl(file, maxSize = 1280, quality = 0.72) {
+function readImageAsDataUrl(file, maxSize = 720, maxCharacters = 24000) {
   if (!file || !file.type?.startsWith("image/")) return Promise.resolve("");
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onerror = () => resolve("");
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => resolve(String(reader.result || ""));
+      image.onerror = () => resolve("");
       image.onload = () => {
         const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
-        const width = Math.max(1, Math.round(image.width * scale));
-        const height = Math.max(1, Math.round(image.height * scale));
+        let width = Math.max(1, Math.round(image.width * scale));
+        let height = Math.max(1, Math.round(image.height * scale));
+        let quality = 0.68;
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        let dataUrl = "";
+
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, width, height);
+          context.drawImage(image, 0, 0, width, height);
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+          if (dataUrl.length <= maxCharacters) break;
+
+          if (quality > 0.38) {
+            quality -= 0.1;
+          } else {
+            width = Math.max(280, Math.round(width * 0.78));
+            height = Math.max(210, Math.round(height * 0.78));
+            quality = 0.58;
+          }
+        }
+
+        resolve(dataUrl.length <= maxCharacters ? dataUrl : "");
       };
       image.src = String(reader.result || "");
     };
     reader.readAsDataURL(file);
   });
+}
+
+function monitorPhotoSource(photo) {
+  const value = String(photo || "");
+  return value.startsWith("data:image/") || /^https?:\/\//i.test(value) ? value : "";
 }
 
 function uniqueSorted(values) {
@@ -1638,7 +1661,7 @@ function renderMonitors() {
     .map((monitor) => `
       <div class="list-item clickable-card ${monitor.id === selectedMonitorId ? "selected" : ""}" data-monitor-id="${monitor.id}">
         <div class="monitor-list-row">
-          ${monitor.photo ? `<img class="monitor-thumb" src="${monitor.photo}" alt="Foto de monitoreo" loading="lazy" />` : ""}
+          ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-thumb" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" loading="lazy" />` : ""}
           <div>
             <strong>${dateShort(monitor.date)} · ${lotName(monitor.lotId)} · ${monitor.crop || lotCrop(monitor.lotId) || "-"} · ${lotVariety(monitor.lotId) || monitor.variety || "-"} · ${monitor.cropStatus || "Sin estado"} ${syncBadge(monitor)}</strong>
             <span>Malezas: ${monitor.weeds || "-"} · Plagas/enfermedades: ${monitor.issues || "-"} · Recomendación: ${monitor.recommendation || "-"}</span>
@@ -1668,8 +1691,11 @@ function renderMonitors() {
 
 function openMonitorDetail(monitorId) {
   selectedMonitorId = monitorId;
-  renderMonitorDetail(monitorId);
   switchView("ficha-monitoreo");
+  renderMonitorDetail(monitorId);
+  window.setTimeout(() => {
+    document.querySelector("#monitorDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 0);
 }
 
 function renderMonitorDetail(monitorId) {
@@ -1696,7 +1722,7 @@ function renderMonitorDetail(monitorId) {
       <p><b>Plagas / enfermedades</b><span>${monitor.issues || "-"}</span></p>
       <p><b>Recomendación</b><span>${monitor.recommendation || "-"}</span></p>
     </div>
-    ${monitor.photo ? `<img class="monitor-photo" src="${monitor.photo}" alt="Foto de monitoreo" />` : ""}
+    ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-photo" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" />` : ""}
     <div class="detail-actions">
       <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
       <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -3366,6 +3392,10 @@ function bindForms() {
     const existing = editingMonitorId ? data.monitors.find((monitor) => monitor.id === editingMonitorId) : null;
     const photoFile = event.currentTarget.elements.photoFile.files?.[0];
     const photo = await readImageAsDataUrl(photoFile);
+    if (photoFile && !photo) {
+      showToast("No se pudo procesar la foto. Probá elegirla nuevamente.");
+      return;
+    }
     const record = {
       id: editingMonitorId || uid("mon"),
       ...values,
