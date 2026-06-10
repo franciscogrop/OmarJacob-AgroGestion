@@ -6,7 +6,7 @@
     <title>Gestión Agro Omar Jacob</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260609-precios-fecha-costos-lote" />
+    <link rel="stylesheet" href="styles.css?v=20260610-deposito-rubros-monitoreo" />
   </head>
   <body>
     <div class="app-shell">
@@ -350,6 +350,8 @@
                   <option>Fungicida</option>
                   <option>Fertilizante</option>
                   <option>Semilla</option>
+                  <option>Coadyuvantes</option>
+                  <option>Curasemilla</option>
                   <option>Otro</option>
                 </select>
               </label>
@@ -469,6 +471,12 @@
         <section class="view" id="ficha-costos-lote">
           <section class="panel product-detail-panel">
             <div id="lotCostDetail" class="application-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="ficha-costos-rubro">
+          <section class="panel product-detail-panel">
+            <div id="costCategoryDetail" class="application-detail"></div>
           </section>
         </section>
 
@@ -603,6 +611,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260608-fotos-monitoreo-sync"></script>
-    <script src="app.js?v=20260609-precios-fecha-costos-lote"></script>
+    <script src="app.js?v=20260610-deposito-rubros-monitoreo"></script>
   </body>
 </html>
