@@ -104,6 +104,7 @@ function loadData() {
   const base = window.APP_DATA ? { ...structuredClone(starterData), ...structuredClone(window.APP_DATA) } : structuredClone(starterData);
   const loaded = saved ? { ...base, ...JSON.parse(saved) } : base;
   loaded.applications = uniqueApplicationRows(loaded.applications || []);
+  normalizeCampaignRecords(loaded);
   return loaded;
 }
 
@@ -148,12 +149,17 @@ function safeStorageSet(key, value) {
   try {
     window.localStorage?.setItem(key, value);
   } catch {
-    showToast("Datos cargados, pero el navegador no permitió guardar localmente");
+    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincronizá antes de continuar.");
   }
 }
 
 function queueSync(table, record, action = "append") {
+  const baseUpdatedAt = record?.updatedAt || "";
+  const updatedAt = new Date().toISOString();
+  if (record) record.updatedAt = updatedAt;
   const syncRecord = enrichRecordForSync(record);
+  syncRecord.baseUpdatedAt = baseUpdatedAt;
+  syncRecord.updatedAt = updatedAt;
   const item = {
     syncId: uid("sync"),
     table,
@@ -404,6 +410,7 @@ function mergeRemoteData(remote) {
     });
     if (table === "applications") data[table] = uniqueApplicationRows(data[table]);
   });
+  normalizeCampaignRecords(data);
   data.products.forEach(recalculateApplicationsForProduct);
 }
 
@@ -481,7 +488,27 @@ function receiptText(product) {
 }
 
 function productLogicalKey(product) {
-  return normalizeName(product?.name);
+  return [
+    normalizeName(product?.name),
+    normalizeUnitKey(product?.unit),
+    normalizeWarehouseKey(product?.warehouse)
+  ].join("|");
+}
+
+function normalizeUnitKey(unit) {
+  const normalized = normalizeName(unit).replace(/\s+/g, "");
+  if (["l", "lt", "lts", "litro", "litros"].includes(normalized)) return "lt";
+  if (["kg", "kgs", "kilo", "kilos"].includes(normalized)) return "kg";
+  if (["un", "und", "unidad", "unidades"].includes(normalized)) return "un";
+  return normalized;
+}
+
+function normalizeWarehouseKey(warehouse) {
+  return normalizeName(warehouse)
+    .replace(/\bdeposito\b/g, "")
+    .replace(/\bprincipal\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function productGroupProducts(product) {
@@ -633,6 +660,68 @@ function sameLot(record, lot) {
   return findLot(record)?.id === lot.id;
 }
 
+function normalizeCampaignValue(value) {
+  const text = String(value || "").trim();
+  const compact = text.match(/^(\d{4})[/-](\d{2})$/);
+  if (compact) return `${compact[1]}/${compact[2]}`;
+  const sheetDate = text.match(/^(\d{4})-(\d{2})-01$/);
+  if (sheetDate) return `${sheetDate[1]}/${sheetDate[2]}`;
+  return text;
+}
+
+function normalizeCampaignRecords(dataset) {
+  ["lots", "orders", "applications", "closures"].forEach((table) => {
+    (dataset?.[table] || []).forEach((record) => {
+      if (record.campaign) record.campaign = normalizeCampaignValue(record.campaign);
+    });
+  });
+  const lots = dataset?.lots || [];
+  const closures = dataset?.closures || [];
+  const findDatasetLot = (record) => lots.find((lot) => lot.id === record?.lotId)
+    || lots.find((lot) => normalizeName(lot.name) === normalizeName(record?.lotName || record?.lote || record?.lotId));
+  lots.forEach((lot) => {
+    const latest = closures
+      .filter((closure) => closure.lotId === lot.id || normalizeName(closure.lotName) === normalizeName(lot.name))
+      .sort((a, b) => parseInt(normalizeCampaignValue(b.campaign), 10) - parseInt(normalizeCampaignValue(a.campaign), 10))[0];
+    if (!lot.campaign && latest?.campaign) lot.campaign = normalizeCampaignValue(latest.campaign);
+    if (!lot.crop && latest?.crop) lot.crop = latest.crop;
+    if (!lot.variety && latest?.variety) lot.variety = latest.variety;
+  });
+  (dataset?.orders || []).forEach((order) => {
+    if (!order.campaign) order.campaign = normalizeCampaignValue(findDatasetLot(order)?.campaign);
+  });
+  (dataset?.applications || []).forEach((application) => {
+    const order = (dataset?.orders || []).find((item) => item.id === application.orderId);
+    if (!application.campaign) {
+      application.campaign = normalizeCampaignValue(order?.campaign || findDatasetLot(application)?.campaign);
+    }
+  });
+}
+
+function activeCampaignValue() {
+  const campaigns = data.lots.map((lot) => normalizeCampaignValue(lot.campaign)).filter(Boolean);
+  return campaigns.sort((a, b) => parseInt(b, 10) - parseInt(a, 10))[0] || "";
+}
+
+function applyActiveCampaignDefaults() {
+  const campaign = activeCampaignValue();
+  const label = document.querySelector("#activeCampaignLabel");
+  if (label) label.textContent = campaign || "Sin campaña";
+  ["#lotForm", "#closureForm"].forEach((selector) => {
+    const input = document.querySelector(`${selector} [name="campaign"]`);
+    if (input && !input.value) input.value = campaign;
+  });
+}
+
+function recordMatchesCampaign(record, lot, campaign) {
+  const target = normalizeCampaignValue(campaign);
+  if (!target) return true;
+  const linkedOrder = record?.orderId ? orderById(record.orderId) : null;
+  const explicit = normalizeCampaignValue(record?.campaign || linkedOrder?.campaign);
+  if (explicit) return explicit === target;
+  return normalizeCampaignValue(lot?.campaign) === target;
+}
+
 function lotForPolygon(polygon) {
   return data.lots.find((lot) => lot.id === polygon.lotId)
     || data.lots.find((lot) => normalizeName(lot.name) === normalizeName(polygon.name))
@@ -660,7 +749,7 @@ function productMatchesApplication(product, application) {
   const group = productGroupProducts(product);
   const groupIds = new Set(group.map((item) => item.id));
   if (application.productId && groupIds.has(application.productId)) return true;
-  return productLogicalKey(product) === normalizeName(application.productName);
+  return !application.productId && normalizeName(product?.name) === normalizeName(application.productName);
 }
 
 function baseStock(product) {
@@ -765,7 +854,11 @@ function showToast(message) {
 }
 
 function todayValue() {
-  return new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function lotHectares(lotId) {
@@ -2066,7 +2159,7 @@ function openApplicationFormFromOrder(orderId) {
   switchView("aplicaciones");
   renderApplications();
 
-  form.elements.date.value = order.date || new Date().toISOString().slice(0, 10);
+  form.elements.date.value = order.date || todayValue();
   form.elements.lotId.value = order.lotId || "";
   form.elements.orderId.value = order.id;
   form.elements.id.value = suggestedApplicationId(order);
@@ -2243,7 +2336,7 @@ function recalculateApplicationsForProduct(product) {
     application.productName = product.name;
     application.unitCost = unitCostForProductDate(product, applicationPricingDate(application), application.unitCost);
     application.productCost = usedQuantity * application.unitCost;
-    application.totalCost = application.productCost + laborCostTotal;
+    application.totalCost = application.productCost;
     if (
       Math.abs(previousUnitCost - application.unitCost) > 0.005
       || Math.abs(previousProductCost - application.productCost) > 0.005
@@ -2569,7 +2662,7 @@ function buildLotCosts() {
     const lot = findLot(order);
     const item = lot ? byLot.get(lot.id) : null;
     const laborTotal = laborCostForOrder(order);
-    if (!item) return;
+    if (!item || !recordMatchesCampaign(order, lot, lot.campaign)) return;
     const hectares = parseDecimal(order.plannedHectares || order.Hectareas_planificadas);
     item.labor += laborTotal;
     item.entries.push({
@@ -2587,8 +2680,9 @@ function buildLotCosts() {
   });
 
   uniqueApplicationRows(data.applications).forEach((application) => {
-    if (!byLot.has(application.lotId)) return;
-    const item = byLot.get(application.lotId);
+    const lot = findLot(application);
+    const item = lot ? byLot.get(lot.id) : null;
+    if (!item || !recordMatchesCampaign(application, lot, lot.campaign)) return;
     const category = costCategory(productType(application.productId));
     const productCost = applicationProductCost(application);
     const unitCost = applicationUnitCost(application);
@@ -2958,7 +3052,7 @@ function renderCampaignDetail() {
   const kgHarvested = editing?.kgHarvested || "";
   const priceTon = editing?.priceTon || "";
   const otherCosts = editing?.otherCosts || 0;
-  const applicationCosts = editing?.applicationCosts || "";
+  const applicationCosts = editing?.applicationCostsManual ? (editing.applicationCosts || "") : "";
   const ensoNormalized = normalizeName(enso);
 
   document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  ·  ${selectedCampaign}`;
@@ -3052,7 +3146,9 @@ function saveCampaignDetailRecord(event) {
   const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
   const otherCosts = parseDecimal(values.otherCosts);
   const manualApplicationCosts = values.applicationCosts === "" ? "" : parseDecimal(values.applicationCosts);
-  const applicationCosts = manualApplicationCosts === "" ? (existing?.applicationCosts ?? applicationCostForLot(lot.id)) : manualApplicationCosts;
+  const applicationCosts = manualApplicationCosts === ""
+    ? applicationCostForLot(lot.id, selectedCampaign)
+    : manualApplicationCosts;
   const income = kgHarvested && priceTon ? (kgHarvested / 1000) * priceTon : "";
   const grossMargin = income === "" ? "" : income - otherCosts - Number(applicationCosts || 0);
   const campaignGroupId = existing?.campaignGroupId
@@ -3073,6 +3169,7 @@ function saveCampaignDetailRecord(event) {
     priceTon,
     otherCosts,
     applicationCosts,
+    applicationCostsManual: manualApplicationCosts !== "",
     income,
     grossMargin
   };
@@ -3388,10 +3485,33 @@ function renderHistoryLotDetail(records = historicalYieldRecords()) {
   `;
 }
 
-function applicationCostForLot(lotId) {
-  return data.applications
-    .filter((application) => application.lotId === lotId)
-    .reduce((sum, application) => sum + application.totalCost, 0);
+function applicationCostForLot(lotId, campaign = "") {
+  const lot = data.lots.find((item) => item.id === lotId);
+  if (!lot) return 0;
+  const targetCampaign = normalizeCampaignValue(campaign || lot.campaign);
+  const eligibleOrders = data.orders.filter((order) => (
+    sameLot(order, lot)
+    && order.status === "Finalizada"
+    && recordMatchesCampaign(order, lot, targetCampaign)
+  ));
+  const eligibleOrderIds = new Set(eligibleOrders.map((order) => order.id));
+  const labor = eligibleOrders.reduce((sum, order) => sum + laborCostForOrder(order), 0);
+  const seenStandaloneLabor = new Set();
+  let standaloneLabor = 0;
+  const products = uniqueApplicationRows(data.applications)
+    .filter((application) => {
+      if (!sameLot(application, lot) || !recordMatchesCampaign(application, lot, targetCampaign)) return false;
+      const order = orderById(application.orderId);
+      return !order || eligibleOrderIds.has(order.id);
+    })
+    .reduce((sum, application) => {
+      if (!orderById(application.orderId) && !seenStandaloneLabor.has(application.id)) {
+        standaloneLabor += parseDecimal(application.laborCostTotal);
+        seenStandaloneLabor.add(application.id);
+      }
+      return sum + applicationProductCost(application);
+    }, 0);
+  return products + labor + standaloneLabor;
 }
 
 function closureGrossMarginHa(closure) {
@@ -3501,6 +3621,7 @@ function deleteClosure(id) {
 
 function renderAll() {
   fillSelects();
+  applyActiveCampaignDefaults();
   renderSyncStatus();
   renderDashboard();
   renderLots();
@@ -3631,7 +3752,7 @@ function bindForms() {
   });
   orderForm.elements.status.addEventListener("change", () => {
     if (orderForm.elements.status.value === "Finalizada" && orderForm.dataset.originalStatus !== "Finalizada") {
-      orderForm.elements.date.value = todayValue();
+      orderForm.dataset.completionDate = todayValue();
     }
   });
   orderForm.elements.plannedHectares.addEventListener("input", () => {
@@ -3647,9 +3768,15 @@ function bindForms() {
     delete values.ownerPreset;
     const plannedHectares = parseDecimal(values.plannedHectares);
     const laborCostHa = parseDecimal(values.laborCostHa);
+    const existing = editingOrderId ? data.orders.find((order) => order.id === editingOrderId) : null;
+    const lot = findLot(values);
     const record = {
       id: editingOrderId || uid("ord"),
       ...values,
+      campaign: normalizeCampaignValue(existing?.campaign || lot?.campaign),
+      completionDate: values.status === "Finalizada"
+        ? (existing?.completionDate || event.currentTarget.dataset.completionDate || todayValue())
+        : "",
       plannedHectares,
       laborCostHa,
       laborCostTotal: plannedHectares * laborCostHa
@@ -3814,8 +3941,9 @@ function bindForms() {
       usedQuantity,
       unitCost,
       productName: product?.name || "",
+      campaign: normalizeCampaignValue(orderById(values.orderId)?.campaign || findLot(values)?.campaign),
       productCost,
-      totalCost: productCost + laborCost
+      totalCost: productCost
     };
 
     if (editingApplicationKey) {
@@ -3880,7 +4008,7 @@ function bindForms() {
     const kgHarvested = parseDecimal(values.kgHarvested);
     const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
     const otherCosts = values.otherCosts === "" ? "" : parseDecimal(values.otherCosts);
-    const applicationCosts = applicationCostForLot(values.lotId);
+    const applicationCosts = applicationCostForLot(values.lotId, values.campaign);
     const income = priceTon === "" ? "" : (kgHarvested / 1000) * priceTon;
     const grossMargin = income === "" ? "" : income - Number(otherCosts || 0) - Number(applicationCosts || 0);
 
@@ -3894,6 +4022,7 @@ function bindForms() {
       priceTon,
       otherCosts,
       applicationCosts,
+      applicationCostsManual: false,
       income,
       grossMargin
     };
