@@ -810,7 +810,6 @@ function clearCostCategoryFilter() {
 }
 
 function initializeFilterClearTools() {
-  document.querySelectorAll(".deposit-filters input").forEach((input) => ensureInlineClear(input, renderProducts));
   ensureFilterClearButton(".deposit-filters", "clearDepositFilters", "Limpiar", clearDepositFilters);
   ensureFilterClearButton(".order-filters", "clearOrderFilters", "Limpiar", clearOrderFilters);
   ensureFilterClearButton(document.querySelector("#historyLotCropFilter")?.closest(".panel-actions"), "clearHistoryLotFilters", "Limpiar", clearHistoryLotFilters);
@@ -3253,7 +3252,7 @@ function renderRotation() {
   const currentCampaign = Array.from(new Set(data.lots.map((lot) => lot.campaign).filter(Boolean))).sort().at(-1) || "";
   const campaigns = Array.from(new Set([...data.lots.map((lot) => lot.campaign), ...data.closures.map((closure) => closure.campaign)])).filter(Boolean).sort();
   const currentIndex = currentCampaign ? campaigns.indexOf(currentCampaign) : campaigns.length - 1;
-  const visibleCampaigns = rotationShowAllCampaigns ? campaigns : campaigns.slice(Math.max(0, currentIndex - 2), currentIndex + 1);
+  const visibleCampaigns = (rotationShowAllCampaigns ? campaigns : campaigns.slice(Math.max(0, currentIndex - 2), currentIndex + 1)).reverse();
   const rows = data.lots.map((lot) => {
     const cells = visibleCampaigns.map((campaign) => {
       const closures = data.closures.filter((item) => sameLot(item, lot) && item.campaign === campaign && item.crop);
