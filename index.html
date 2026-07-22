@@ -6,7 +6,7 @@
     <title>Gestión Agro Omar Jacob</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260616-rotacion-filtros" />
+    <link rel="stylesheet" href="styles.css?v=20260722-resumen-insumos-ordenes" />
   </head>
   <body>
     <div class="app-shell">
@@ -296,7 +296,10 @@
 
         <section class="view" id="aplicaciones">
           <section class="form-band" id="applicationFormBand">
-            <h2>Nueva aplicación</h2>
+            <div class="form-band-header">
+              <h2>Nueva aplicación</h2>
+              <button class="link-button" id="backToOrdersFromApplicationForm" type="button">Volver a órdenes</button>
+            </div>
             <form id="applicationForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
               <label>Lote <select name="lotId" required></select></label>
@@ -455,8 +458,11 @@
                     <th>Ha</th>
                     <th>Labor</th>
                     <th>Herbicidas</th>
+                    <th>Insecticidas</th>
+                    <th>Fungicidas</th>
                     <th>Fertilizantes</th>
                     <th>Semillas</th>
+                    <th>Coadyuvantes</th>
                     <th>Otros</th>
                     <th>Total</th>
                     <th>u$s/ha</th>
@@ -611,6 +617,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260608-fotos-monitoreo-sync"></script>
-    <script src="app.js?v=20260616-rotacion-filtros"></script>
+    <script src="app.js?v=20260722-resumen-insumos-ordenes"></script>
   </body>
 </html>

@@ -985,6 +985,26 @@ h2 {
   align-items: end;
 }
 
+.form-band-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.form-band-header h2 {
+  margin-bottom: 0;
+}
+
+.order-product-summary-filters {
+  align-items: end;
+}
+
+.order-product-summary-filters label {
+  min-width: 220px;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -1524,6 +1544,90 @@ td {
 
 .lot-total-box b {
   font-size: 14px;
+}
+
+.lot-cost-breakdown-box {
+  background: #f8fbff;
+  color: var(--text);
+  border-color: #cfdced;
+  gap: 12px;
+}
+
+.lot-cost-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lot-cost-totals article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lot-cost-breakdown-box .lot-cost-totals span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lot-cost-breakdown-box .lot-cost-totals strong {
+  color: var(--text);
+  font-size: 22px;
+}
+
+.lot-cost-bar {
+  display: flex;
+  height: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ebf3;
+}
+
+.lot-cost-bar span {
+  min-width: 2px;
+}
+
+.lot-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.lot-cost-grid div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lot-cost-grid i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.lot-cost-grid span,
+.lot-cost-grid strong,
+.lot-cost-grid em {
+  display: block;
+}
+
+.lot-cost-grid strong,
+.lot-cost-grid em {
+  grid-column: 2;
+}
+
+.lot-cost-grid em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }
 
 .map-row-stack {
@@ -2211,6 +2315,11 @@ td {
 
   .map-kpis,
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lot-cost-totals,
+  .lot-cost-grid {
     grid-template-columns: 1fr;
   }
 
