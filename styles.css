@@ -361,7 +361,18 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: end;
   gap: 8px;
+}
+
+.order-filters label {
+  min-width: 150px;
+  max-width: 210px;
+}
+
+.order-filters select {
+  min-height: 32px;
+  padding: 5px 9px;
 }
 
 .order-filter {
@@ -421,6 +432,40 @@ h2 {
   border-radius: 6px;
   font-size: 12px;
   padding: 4px 7px;
+}
+
+.link-button.small {
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 7px;
+}
+
+.clickable-row.selected {
+  background: #eef6ff;
+}
+
+.order-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.order-product-detail {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.order-product-detail:empty {
+  display: none;
+}
+
+.compact-detail-header {
+  padding: 0 0 10px;
+}
+
+.order-product-detail-table table {
+  min-width: 720px;
 }
 
 .lot-cell {
@@ -545,6 +590,15 @@ h2 {
   .application-detail-header {
     align-items: stretch;
     flex-direction: column;
+    padding: 14px 12px 10px;
+  }
+
+  .application-detail-header strong {
+    font-size: 26px;
+  }
+
+  .application-share-actions {
+    justify-content: flex-start;
   }
 
   .application-order-summary {
@@ -559,6 +613,15 @@ h2 {
 
   .application-order-summary .cost-only {
     grid-column: 1 / -1;
+  }
+
+  .application-detail .table-wrap table {
+    min-width: 620px;
+  }
+
+  .application-detail .table-wrap th,
+  .application-detail .table-wrap td {
+    padding: 8px 10px;
   }
 }
 

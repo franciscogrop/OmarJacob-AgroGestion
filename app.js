@@ -44,6 +44,9 @@ let selectedMonitorId = "";
 let mapLayer = "satellite";
 let orderFilter = "Todas";
 let orderProductTextFilter = "";
+let orderCropFilter = "Todos";
+let orderLotFilter = "Todos";
+let selectedOrderProductKey = "";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
 let editingLotId = "";
@@ -781,7 +784,13 @@ function clearDepositFilters() {
 
 function clearOrderFilters() {
   orderFilter = "Todas";
+  orderCropFilter = "Todos";
+  orderLotFilter = "Todos";
   document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+  const crop = document.querySelector("#orderCropFilter");
+  const lot = document.querySelector("#orderLotFilter");
+  if (crop) crop.value = "Todos";
+  if (lot) lot.value = "Todos";
   renderOrders();
 }
 
@@ -1008,6 +1017,15 @@ function productType(id) {
 
 function orderById(id) {
   return data.orders.find((order) => order.id === id);
+}
+
+function orderShortLabel(orderOrId) {
+  const order = typeof orderOrId === "string" ? orderById(orderOrId) : orderOrId;
+  if (!order) return "OT-?";
+  const readable = String(order.id || "").match(/^ORD-\d+$/i);
+  if (readable) return order.id.toUpperCase();
+  const index = data.orders.findIndex((item) => item.id === order.id);
+  return `OT-${String(index + 1 || 1).padStart(3, "0")}`;
 }
 
 function productMatchesApplication(product, application) {
@@ -1956,6 +1974,7 @@ function parseKml(text) {
 }
 
 function renderOrders() {
+  populateOrderExtraFilters();
   const pending = data.orders.filter((order) => order.status === "Pendiente");
   const progress = data.orders.filter((order) => order.status === "En curso");
   const done = data.orders.filter((order) => order.status === "Finalizada");
@@ -1975,7 +1994,7 @@ function renderOrders() {
     return map;
   }, new Map());
   const visibleOrders = data.orders
-    .filter((order) => orderFilter === "Todas" || order.status === orderFilter)
+    .filter(orderMatchesMainFilters)
     .slice()
     .sort(orderFilter === "Todas" ? byOrderPriority : byRecentDate);
 
@@ -2042,6 +2061,36 @@ function renderOrders() {
   renderOrderProductSummary();
 }
 
+function orderEffectiveCrop(order) {
+  return order?.crop || lotCrop(order?.lotId) || "";
+}
+
+function populateOrderExtraFilters() {
+  const cropSelect = document.querySelector("#orderCropFilter");
+  const lotSelect = document.querySelector("#orderLotFilter");
+  if (cropSelect) {
+    const crops = Array.from(new Set(data.orders.map(orderEffectiveCrop).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
+    cropSelect.innerHTML = [`<option value="Todos">Todos</option>`, ...crops.map((crop) => `<option value="${crop}">${crop}</option>`)].join("");
+    cropSelect.value = crops.includes(orderCropFilter) ? orderCropFilter : "Todos";
+    orderCropFilter = cropSelect.value;
+  }
+  if (lotSelect) {
+    const lotIds = Array.from(new Set(data.orders.map((order) => order.lotId).filter(Boolean)))
+      .sort((a, b) => lotName(a).localeCompare(lotName(b), "es", { sensitivity: "base", numeric: true }));
+    lotSelect.innerHTML = [`<option value="Todos">Todos</option>`, ...lotIds.map((lotId) => `<option value="${lotId}">${lotName(lotId)}</option>`)].join("");
+    lotSelect.value = lotIds.includes(orderLotFilter) ? orderLotFilter : "Todos";
+    orderLotFilter = lotSelect.value;
+  }
+}
+
+function orderMatchesMainFilters(order) {
+  if (orderFilter !== "Todas" && order.status !== orderFilter) return false;
+  if (orderCropFilter !== "Todos" && normalizeName(orderEffectiveCrop(order)) !== normalizeName(orderCropFilter)) return false;
+  if (orderLotFilter !== "Todos" && order.lotId !== orderLotFilter) return false;
+  return true;
+}
+
 function ensureOrderProductSummaryPanel() {
   let panel = document.querySelector("#orderProductSummaryPanel");
   if (panel) return panel;
@@ -2073,6 +2122,7 @@ function ensureOrderProductSummaryPanel() {
           <tbody id="orderProductSummaryTable"></tbody>
         </table>
       </div>
+      <div id="orderProductDetail" class="order-product-detail"></div>
     </section>
   `);
   panel = document.querySelector("#orderProductSummaryPanel");
@@ -2111,7 +2161,7 @@ function renderOrderProductSummary() {
   if (input && input.value !== orderProductTextFilter) input.value = orderProductTextFilter;
   const filter = normalizeName(orderProductTextFilter);
   const orders = data.orders.filter((order) =>
-    (orderFilter === "Todas" || order.status === orderFilter)
+    orderMatchesMainFilters(order)
     && orderMatchesProductSummaryFilter(order, filter)
   );
   const orderIds = new Set(orders.map((order) => order.id));
@@ -2123,23 +2173,111 @@ function renderOrderProductSummary() {
       const name = application.productName || product?.name || application.productId || "Sin producto";
       const unit = product?.unit || application.unit || "";
       const key = `${normalizeName(name)}|${normalizeName(unit)}`;
-      const item = grouped.get(key) || { name, unit, quantity: 0, orders: new Set(), statuses: new Set() };
+      const item = grouped.get(key) || { key, name, unit, quantity: 0, orders: new Set(), statuses: new Set() };
       item.quantity += Number(application.usedQuantity || application.totalQuantity || (Number(application.dose || 0) * Number(application.hectares || 0)) || 0);
       item.orders.add(application.orderId);
       item.statuses.add(orderById(application.orderId)?.status || "Sin estado");
       grouped.set(key, item);
     });
 
-  document.querySelector("#orderProductSummaryMeta").textContent = `Filtro de estado: ${orderFilter}. Ordenes consideradas: ${orders.length}.`;
+  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Ordenes consideradas: ${orders.length}.`;
   const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base", numeric: true }));
   document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
-    <tr>
+    <tr class="clickable-row ${item.key === selectedOrderProductKey ? "selected" : ""}" data-order-product-key="${encodeURIComponent(item.key)}">
       <td><strong>${item.name}</strong></td>
       <td class="num">${number(item.quantity, 2)} ${item.unit}</td>
       <td>${Array.from(item.statuses).join(", ")}</td>
-      <td>${Array.from(item.orders).join(", ")}</td>
+      <td class="order-chip-list">${Array.from(item.orders).map((orderId) => `<button class="link-button small" data-open-summary-order="${orderId}" title="${orderId}">${orderShortLabel(orderId)}</button>`).join("")}</td>
     </tr>
   `).join("") || `<tr><td colspan="4">No hay productos vinculados a las ordenes filtradas.</td></tr>`;
+  document.querySelectorAll("[data-order-product-key]").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      selectedOrderProductKey = decodeURIComponent(row.dataset.orderProductKey || "");
+      renderOrderProductSummary();
+      document.querySelector("#orderProductDetail")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+  document.querySelectorAll("[data-open-summary-order]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openOrderDetail(button.dataset.openSummaryOrder, "ordenes");
+    });
+  });
+  renderOrderProductDetail();
+}
+
+function renderOrderProductDetail() {
+  const detail = document.querySelector("#orderProductDetail");
+  if (!detail) return;
+  if (!selectedOrderProductKey) {
+    detail.innerHTML = "";
+    return;
+  }
+  const [selectedName, selectedUnit] = selectedOrderProductKey.split("|");
+  const filter = normalizeName(orderProductTextFilter);
+  const orders = data.orders.filter((order) =>
+    orderMatchesMainFilters(order)
+    && orderMatchesProductSummaryFilter(order, filter)
+  );
+  const orderIds = new Set(orders.map((order) => order.id));
+  const rows = data.applications
+    .filter((application) => application.orderId && orderIds.has(application.orderId))
+    .filter((application) => {
+      const product = data.products.find((item) => item.id === application.productId);
+      const name = application.productName || product?.name || application.productId || "Sin producto";
+      const unit = product?.unit || application.unit || "";
+      return `${normalizeName(name)}|${normalizeName(unit)}` === selectedOrderProductKey;
+    })
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const productLabel = rows[0]?.productName || productName(rows[0]?.productId) || selectedName || "Producto";
+  detail.innerHTML = `
+    <div class="panel-header compact-detail-header">
+      <div>
+        <h2>${productLabel}</h2>
+        <span class="panel-note">Detalle por orden filtrada</span>
+      </div>
+      <button class="link-button" id="closeOrderProductDetail" type="button">Cerrar</button>
+    </div>
+    <div class="table-wrap order-product-detail-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Orden</th>
+            <th>Fecha</th>
+            <th>Lote</th>
+            <th>Estado</th>
+            <th class="num">Dosis/ha</th>
+            <th class="num">Cantidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => {
+            const order = orderById(row.orderId);
+            const quantity = Number(row.usedQuantity || row.totalQuantity || (Number(row.dose || 0) * Number(row.hectares || 0)) || 0);
+            return `
+              <tr>
+                <td><button class="link-button small" data-open-summary-order="${row.orderId}" title="${row.orderId}">${orderShortLabel(order)}</button></td>
+                <td>${dateShort(row.date || order?.date)}</td>
+                <td>${lotName(row.lotId || order?.lotId)}</td>
+                <td>${order?.status || "-"}</td>
+                <td class="num">${number(row.dose, 2)}</td>
+                <td class="num">${number(quantity, 2)} ${selectedUnit}</td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="6">No hay detalle para este producto.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+  detail.querySelector("#closeOrderProductDetail")?.addEventListener("click", () => {
+    selectedOrderProductKey = "";
+    renderOrderProductSummary();
+  });
+  detail.querySelectorAll("[data-open-summary-order]").forEach((button) => {
+    button.addEventListener("click", () => openOrderDetail(button.dataset.openSummaryOrder, "ordenes"));
+  });
 }
 
 function openOrderDetail(orderId, backView = "ordenes") {
@@ -2385,10 +2523,10 @@ function renderApplicationDetail(applicationId) {
   detail.innerHTML = `
     <div class="application-detail-header">
       <div class="application-order-heading">
-        <span class="application-order-label">Numero de orden</span>
-        <span class="application-order-number">${applicationId}${linkedOrder?.id ? ` - ${linkedOrder.id}` : ""}</span>
+        <span class="application-order-label">Orden de aplicacion</span>
+        <span class="application-order-number">${applicationId}${linkedOrder ? ` - ${orderShortLabel(linkedOrder)}` : ""}</span>
         <strong>${lotName(first.lotId)}</strong>
-        <span>${applicationId}${linkedOrder?.id ? ` Â· ${linkedOrder.id}` : ""}</span>
+        <span>${number(first.hectares, 2)} ha${linkedOrder?.id ? ` - orden interna ${linkedOrder.id}` : ""}</span>
       </div>
       <div class="detail-actions application-share-actions">
         <button class="link-button" data-copy-application-order="${applicationId}">Copiar orden</button>
@@ -2435,8 +2573,8 @@ function renderApplicationDetail(applicationId) {
           <tr>
             <th>Producto</th>
             <th>Dosis/ha</th>
-            <th>Ha</th>
             <th>Cantidad</th>
+            <th>Ha</th>
             <th class="cost-only">Costo unit.</th>
             <th class="cost-only">Costo producto</th>
             <th class="cost-only">$/ha</th>
@@ -2448,8 +2586,8 @@ function renderApplicationDetail(applicationId) {
             <tr>
               <td>${row.productName || productName(row.productId)}</td>
               <td>${number(row.dose, 2)}</td>
-              <td>${number(row.hectares, 2)}</td>
               <td>${number(row.usedQuantity, 2)}</td>
+              <td>${number(row.hectares, 2)}</td>
               <td class="cost-only">${money(row.unitCost)}</td>
               <td class="cost-only">${money(row.productCost)}</td>
               <td class="cost-only">${money(row.hectares ? row.productCost / row.hectares : 0)}</td>
@@ -2499,7 +2637,7 @@ function applicationOrderText(applicationId) {
   const owner = linkedOrder?.owner || "-";
   const lines = [
     `Orden: ${service}`,
-    `AplicaciÃ³n: ${applicationId}${linkedOrder?.id ? ` / ${linkedOrder.id}` : ""}`,
+    `AplicaciÃ³n: ${applicationId}${linkedOrder?.id ? ` / ${orderShortLabel(linkedOrder)} / interna ${linkedOrder.id}` : ""}`,
     `Fecha: ${dateShort(first.date)}`,
     `Lote: ${lotName(first.lotId)}${lot?.farm ? ` (${lot.farm})` : ""}`,
     `Superficie: ${number(first.hectares, 2)} ha`,
@@ -2570,11 +2708,6 @@ function openApplicationFormFromOrder(orderId) {
 function suggestedApplicationId(order) {
   const existing = data.applications.find((application) => application.orderId === order.id)?.id;
   if (existing) return existing;
-  const match = String(order.id || "").match(/(\d+)$/);
-  const preferred = match ? `APL-${match[1].padStart(3, "0")}` : "";
-  const idAvailable = (id) => id && !data.applications.some((application) => application.id === id);
-  if (idAvailable(preferred)) return preferred;
-
   const maxNumber = data.applications.reduce((max, application) => {
     const found = String(application.id || "").match(/APL-(\d+)/i);
     return found ? Math.max(max, Number(found[1])) : max;
@@ -4546,6 +4679,14 @@ function bindOrderFilters() {
       renderOrders();
       document.querySelector("#ordersTable")?.closest(".panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+  document.querySelector("#orderCropFilter")?.addEventListener("change", (event) => {
+    orderCropFilter = event.target.value || "Todos";
+    renderOrders();
+  });
+  document.querySelector("#orderLotFilter")?.addEventListener("change", (event) => {
+    orderLotFilter = event.target.value || "Todos";
+    renderOrders();
   });
 }
 
