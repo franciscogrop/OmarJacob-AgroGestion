@@ -1030,9 +1030,12 @@ function orderShortLabel(orderOrId) {
 
 function productMatchesApplication(product, application) {
   const group = productGroupProducts(product);
+  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
+  const applicationName = normalizeName(application.productName);
+  if (applicationName) return groupNames.has(applicationName);
   const groupIds = new Set(group.map((item) => item.id));
   if (application.productId && groupIds.has(application.productId)) return true;
-  return !application.productId && normalizeName(product?.name) === normalizeName(application.productName);
+  return false;
 }
 
 function baseStock(product) {
@@ -1231,21 +1234,26 @@ function fillSelects() {
 function toggleManualProductInput(form = document.querySelector("#applicationForm")) {
   if (!form?.elements?.productId) return;
   const manual = form.elements.productId.value === "__manual__";
-  form.querySelector(".manual-product")?.classList.toggle("hidden-panel", !manual);
+  form.querySelectorAll(".manual-product").forEach((field) => field.classList.toggle("hidden-panel", !manual));
   if (form.elements.manualProductName) form.elements.manualProductName.required = manual;
+  if (form.elements.manualProductUnit) form.elements.manualProductUnit.required = manual;
 }
 
-function getOrCreateManualProduct(name, lotId = "") {
+function getOrCreateManualProduct(name, unit = "", lotId = "") {
   const cleanName = String(name || "").trim();
+  const cleanUnit = String(unit || "").trim();
   if (!cleanName) return null;
-  const existing = data.products.find((product) => normalizeName(product.name) === normalizeName(cleanName));
+  const existing = data.products.find((product) =>
+    normalizeName(product.name) === normalizeName(cleanName)
+    && (!cleanUnit || normalizeUnitKey(product.unit) === normalizeUnitKey(cleanUnit))
+  );
   if (existing) return existing;
   const lot = data.lots.find((item) => item.id === lotId);
   const product = {
     id: uid("prod"),
     name: cleanName,
     type: "Sin clasificar",
-    unit: "unidad",
+    unit: cleanUnit || "unidad",
     quantity: 0,
     unitCost: 0,
     warehouse: lot?.farm || "",
@@ -2321,7 +2329,7 @@ function renderOrderDetail(orderId) {
         <div><b>${money(hectares ? total / hectares : 0)}</b><span>Total/ha</span></div>
       </div>
       <div class="map-info-lines">
-        <span>ID orden: ${order.id}</span>
+        <span>Número de orden: ${orderShortLabel(order)}</span>
         <span>Cultivo: ${order.crop || lotCrop(order.lotId) || "-"}</span>
         <span>Variedad/HÃ­brido: ${order.variety || lotVariety(order.lotId) || "-"}</span>
         <span>Costo labor/ha: ${money(order.laborCostHa || 0)}</span>
@@ -2332,7 +2340,7 @@ function renderOrderDetail(orderId) {
         <button class="link-button danger" data-delete-order="${order.id}">Eliminar orden</button>
       </div>
       <div class="map-subsection">
-        <h3>AplicaciÃ³n vinculada</h3>
+        <h3>Aplicación vinculada</h3>
         ${rows.length ? `
           <div class="map-row clickable-card" data-open-application="${applicationId}">
             <div>
@@ -2523,10 +2531,10 @@ function renderApplicationDetail(applicationId) {
   detail.innerHTML = `
     <div class="application-detail-header">
       <div class="application-order-heading">
-        <span class="application-order-label">Orden de aplicacion</span>
+        <span class="application-order-label">Número de aplicación</span>
         <span class="application-order-number">${applicationId}${linkedOrder ? ` - ${orderShortLabel(linkedOrder)}` : ""}</span>
         <strong>${lotName(first.lotId)}</strong>
-        <span>${number(first.hectares, 2)} ha${linkedOrder?.id ? ` - orden interna ${linkedOrder.id}` : ""}</span>
+        <span>${number(first.hectares, 2)} ha</span>
       </div>
       <div class="detail-actions application-share-actions">
         <button class="link-button" data-copy-application-order="${applicationId}">Copiar orden</button>
@@ -2637,7 +2645,8 @@ function applicationOrderText(applicationId) {
   const owner = linkedOrder?.owner || "-";
   const lines = [
     `Orden: ${service}`,
-    `AplicaciÃ³n: ${applicationId}${linkedOrder?.id ? ` / ${orderShortLabel(linkedOrder)} / interna ${linkedOrder.id}` : ""}`,
+    `Número de aplicación: ${applicationId}`,
+    `Número de orden: ${linkedOrder ? orderShortLabel(linkedOrder) : first.orderId || "-"}`,
     `Fecha: ${dateShort(first.date)}`,
     `Lote: ${lotName(first.lotId)}${lot?.farm ? ` (${lot.farm})` : ""}`,
     `Superficie: ${number(first.hectares, 2)} ha`,
@@ -4498,7 +4507,7 @@ function bindForms() {
     const wasEditingApplication = Boolean(editingApplicationKey);
     const values = formData(event.currentTarget);
     const product = values.productId === "__manual__"
-      ? getOrCreateManualProduct(values.manualProductName, values.lotId)
+      ? getOrCreateManualProduct(values.manualProductName, values.manualProductUnit, values.lotId)
       : data.products.find((item) => item.id === values.productId);
     if (!product) {
       showToast("ElegÃ­ o escribÃ­ un producto");
@@ -4506,6 +4515,7 @@ function bindForms() {
     }
     values.productId = product.id;
     delete values.manualProductName;
+    delete values.manualProductUnit;
     const hectares = parseDecimal(values.hectares);
     const quantityFromInput = values.usedQuantity === "" ? 0 : parseDecimal(values.usedQuantity);
     const dose = quantityFromInput && hectares ? quantityFromInput / hectares : parseDecimal(values.dose);
