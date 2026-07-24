@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-omar-jacob-cache-v43-producto-manual-unidad-numeros";
+const CACHE_NAME = "gestion-agro-omar-jacob-cache-v45-textos-finales-orden";
 const ASSETS = [
   "./",
   "./index.html",
