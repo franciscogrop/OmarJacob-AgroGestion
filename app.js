@@ -606,7 +606,8 @@ function unitCostForProductDate(product, date, fallbackCost = "") {
   const dated = datedReceiptEntries(product);
   const eligible = dated.filter((entry) => !date || entry.date <= date);
   if (eligible.length) return eligible[eligible.length - 1].parsedUnitCost;
-  if (fallbackCost !== "" && fallbackCost != null) return parseDecimal(fallbackCost);
+  const fallbackNumber = parseDecimal(fallbackCost);
+  if (fallbackNumber) return fallbackNumber;
   if (dated.length) return dated[0].parsedUnitCost;
   return parseDecimal(product.unitCost);
 }
@@ -2647,15 +2648,18 @@ function renderApplicationDetail(applicationId) {
           </tr>
         </thead>
         <tbody>
-          ${rows.map((row) => `
+          ${rows.map((row) => {
+            const unitCost = applicationUnitCost(row);
+            const productCost = applicationQuantity(row) * unitCost;
+            return `
             <tr>
               <td>${row.productName || productName(row.productId)}</td>
               <td>${number(row.dose, 2)}</td>
               <td>${number(row.usedQuantity, 2)}</td>
               <td>${number(row.hectares, 2)}</td>
-              <td class="cost-only">${money(row.unitCost)}</td>
-              <td class="cost-only">${money(row.productCost)}</td>
-              <td class="cost-only">${money(row.hectares ? row.productCost / row.hectares : 0)}</td>
+              <td class="cost-only">${money(unitCost)}</td>
+              <td class="cost-only">${money(productCost)}</td>
+              <td class="cost-only">${money(row.hectares ? productCost / row.hectares : 0)}</td>
               <td>
                 <div class="row-actions">
                   <button class="link-button" data-edit-application="${applicationKey(row)}">Editar</button>
@@ -2663,7 +2667,7 @@ function renderApplicationDetail(applicationId) {
                 </div>
               </td>
             </tr>
-          `).join("")}
+          `; }).join("")}
           ${laborCost ? `
             <tr class="service-row">
               <td>Labor / servicio</td>
