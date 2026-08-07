@@ -44,6 +44,7 @@ let selectedMonitorId = "";
 let mapLayer = "satellite";
 let orderFilter = "Todas";
 let orderProductTextFilter = "";
+let orderProductFilter = "Todos";
 let orderCropFilter = "Todos";
 let orderLotFilter = "Todos";
 let selectedOrderProductKey = "";
@@ -668,7 +669,31 @@ function displayProducts() {
     const current = groups.get(key);
     if (!current || receiptEntriesForProduct(product).length > receiptEntriesForProduct(current).length) groups.set(key, product);
   });
-  return Array.from(groups.values());
+  return Array.from(groups.values()).sort(compareProductsByStock);
+}
+
+function compareProductsByStock(a, b) {
+  const aStock = stockForProduct(a).physical;
+  const bStock = stockForProduct(b).physical;
+  const aPositive = aStock > 0;
+  const bPositive = bStock > 0;
+  if (aPositive || bPositive) {
+    if (aPositive !== bPositive) return aPositive ? -1 : 1;
+    if (Math.abs(bStock - aStock) > 0.005) return bStock - aStock;
+    return compareProductsByName(a, b);
+  }
+  const aNegative = aStock < 0;
+  const bNegative = bStock < 0;
+  if (aNegative || bNegative) {
+    if (aNegative !== bNegative) return aNegative ? -1 : 1;
+    if (Math.abs(aStock - bStock) > 0.005) return aStock - bStock;
+    return compareProductsByName(a, b);
+  }
+  return compareProductsByName(a, b);
+}
+
+function compareProductsByName(a, b) {
+  return String(a?.name || "").localeCompare(String(b?.name || ""), "es", { sensitivity: "base", numeric: true });
 }
 
 function applyExistingProductDefaults() {
@@ -840,13 +865,20 @@ function clearDepositFilters() {
 
 function clearOrderFilters() {
   orderFilter = "Todas";
+  orderProductFilter = "Todos";
+  orderProductTextFilter = "";
   orderCropFilter = "Todos";
   orderLotFilter = "Todos";
-  document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+  const status = document.querySelector("#orderStatusFilter");
   const crop = document.querySelector("#orderCropFilter");
   const lot = document.querySelector("#orderLotFilter");
+  const product = document.querySelector("#orderProductFilter");
+  const productSearch = document.querySelector("#orderProductSearch");
+  if (status) status.value = "Todas";
   if (crop) crop.value = "Todos";
   if (lot) lot.value = "Todos";
+  if (product) product.value = "Todos";
+  if (productSearch) productSearch.value = "";
   renderOrders();
 }
 
@@ -2130,8 +2162,16 @@ function orderEffectiveCrop(order) {
 }
 
 function populateOrderExtraFilters() {
+  const statusSelect = document.querySelector("#orderStatusFilter");
   const cropSelect = document.querySelector("#orderCropFilter");
   const lotSelect = document.querySelector("#orderLotFilter");
+  const productSelect = document.querySelector("#orderProductFilter");
+  if (statusSelect) {
+    const statuses = ["Todas", "Pendiente", "En curso", "Finalizada", "Cancelada"];
+    statusSelect.innerHTML = statuses.map((status) => `<option value="${status}">${status === "Todas" ? "Todos" : status}</option>`).join("");
+    statusSelect.value = statuses.includes(orderFilter) ? orderFilter : "Todas";
+    orderFilter = statusSelect.value;
+  }
   if (cropSelect) {
     const crops = Array.from(new Set(data.orders.map(orderEffectiveCrop).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
@@ -2146,13 +2186,37 @@ function populateOrderExtraFilters() {
     lotSelect.value = lotIds.includes(orderLotFilter) ? orderLotFilter : "Todos";
     orderLotFilter = lotSelect.value;
   }
+  if (productSelect) {
+    const products = Array.from(new Set(data.applications
+      .map((application) => application.productName || productName(application.productId))
+      .filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
+    productSelect.innerHTML = [`<option value="Todos">Todos</option>`, ...products.map((product) => `<option value="${product}">${product}</option>`)].join("");
+    const selectedProduct = products.find((product) => normalizeName(product) === normalizeName(orderProductFilter));
+    productSelect.value = selectedProduct || "Todos";
+    orderProductFilter = productSelect.value;
+  }
 }
 
 function orderMatchesMainFilters(order) {
   if (orderFilter !== "Todas" && order.status !== orderFilter) return false;
   if (orderCropFilter !== "Todos" && normalizeName(orderEffectiveCrop(order)) !== normalizeName(orderCropFilter)) return false;
   if (orderLotFilter !== "Todos" && order.lotId !== orderLotFilter) return false;
+  if (orderProductFilter !== "Todos" && !orderHasProduct(order, orderProductFilter)) return false;
   return true;
+}
+
+function orderHasProduct(order, productFilter) {
+  const target = normalizeName(productFilter);
+  if (!target) return true;
+  return data.applications.some((application) => {
+    if (application.orderId !== order.id) return false;
+    const names = [
+      application.productName,
+      productName(application.productId)
+    ].map(normalizeName).filter(Boolean);
+    return names.some((name) => name === target);
+  });
 }
 
 function ensureOrderProductSummaryPanel() {
@@ -2244,7 +2308,7 @@ function renderOrderProductSummary() {
       grouped.set(key, item);
     });
 
-  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Ordenes consideradas: ${orders.length}.`;
+  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Producto: ${orderProductFilter}. Ordenes consideradas: ${orders.length}.`;
   const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base", numeric: true }));
   document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
     <tr class="clickable-row ${item.key === selectedOrderProductKey ? "selected" : ""}" data-order-product-key="${encodeURIComponent(item.key)}">
@@ -5058,13 +5122,18 @@ function bindNavigation() {
 }
 
 function bindOrderFilters() {
-  document.querySelectorAll(".order-filter, [data-order-filter-shortcut]").forEach((button) => {
+  document.querySelectorAll("[data-order-filter-shortcut]").forEach((button) => {
     button.addEventListener("click", () => {
-      orderFilter = button.dataset.orderFilter || button.dataset.orderFilterShortcut;
-      document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+      orderFilter = button.dataset.orderFilterShortcut || "Todas";
+      const statusSelect = document.querySelector("#orderStatusFilter");
+      if (statusSelect) statusSelect.value = orderFilter;
       renderOrders();
       document.querySelector("#ordersTable")?.closest(".panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+  document.querySelector("#orderStatusFilter")?.addEventListener("change", (event) => {
+    orderFilter = event.target.value || "Todas";
+    renderOrders();
   });
   document.querySelector("#orderCropFilter")?.addEventListener("change", (event) => {
     orderCropFilter = event.target.value || "Todos";
@@ -5072,6 +5141,10 @@ function bindOrderFilters() {
   });
   document.querySelector("#orderLotFilter")?.addEventListener("change", (event) => {
     orderLotFilter = event.target.value || "Todos";
+    renderOrders();
+  });
+  document.querySelector("#orderProductFilter")?.addEventListener("change", (event) => {
+    orderProductFilter = event.target.value || "Todos";
     renderOrders();
   });
 }
