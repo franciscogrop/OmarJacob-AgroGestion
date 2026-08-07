@@ -1118,12 +1118,14 @@ function orderShortLabel(orderOrId) {
 
 function productMatchesApplication(product, application) {
   const group = productGroupProducts(product);
-  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
-  const applicationName = normalizeName(application.productName);
-  if (applicationName) return groupNames.has(applicationName);
   const groupIds = new Set(group.map((item) => item.id));
   if (application.productId && groupIds.has(application.productId)) return true;
-  return false;
+  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
+  const applicationNames = [
+    application.productName,
+    productName(application.productId)
+  ].map(normalizeName).filter(Boolean);
+  return applicationNames.some((name) => groupNames.has(name));
 }
 
 function baseStock(product) {
@@ -3399,7 +3401,7 @@ function renderProductDetail() {
   const outputs = data.applications
     .filter((application) => productMatchesApplication(product, application))
     .map((application) => ({ application, order: orderById(application.orderId) }))
-    .sort((a, b) => String(b.application.date || b.order?.date || "").localeCompare(String(a.application.date || a.order?.date || "")));
+    .sort((a, b) => String(b.order?.date || b.application.date || "").localeCompare(String(a.order?.date || a.application.date || "")));
   detail.innerHTML = `
     <div class="application-detail-header">
       <div>
@@ -3453,9 +3455,9 @@ function renderProductDetail() {
             <thead><tr><th>Fecha</th><th>Orden</th><th>Lote</th><th>Estado</th><th>Cantidad</th></tr></thead>
             <tbody>
               ${outputs.map(({ application, order }) => `<tr class="clickable-row" data-open-output-order="${order?.id || application.orderId || ""}">
-                <td>${dateShort(application.date || order?.date)}</td>
+                <td>${dateShort(order?.date || application.date)}</td>
                 <td><button class="link-button small" type="button">${orderShortLabel(order || application.orderId)}</button></td>
-                <td>${lotName(application.lotId || order?.lotId)}</td>
+                <td>${lotName(order?.lotId || application.lotId)}</td>
                 <td>${order?.status || "Aplicada"}</td>
                 <td>${number(applicationQuantity(application), 2)} ${product.unit || ""}</td>
               </tr>`).join("") || `<tr><td colspan="5">No hay salidas vinculadas a ordenes.</td></tr>`}
