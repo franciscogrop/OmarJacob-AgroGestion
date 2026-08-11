@@ -1,7 +1,7 @@
 ﻿const storageKey = "gestion-agro-omar-jacob-v2-rotacion";
 const syncQueueKey = "gestion-agro-omar-jacob-sync-queue-v1";
 const syncConfigKey = "gestion-agro-omar-jacob-sync-config-v1";
-const defaultSyncApiUrl = "";
+const defaultSyncApiUrl = "https://script.google.com/macros/s/AKfycbyQrgYsIMorF0AXBlFWf-Oo3ZeJ2ZL4PW4szpFZkIXCmEfVe05wByaNipSjVk50RPvHFg/exec";
 const syncedBadgeVisibleMs = 6000;
 
 const starterData = {
