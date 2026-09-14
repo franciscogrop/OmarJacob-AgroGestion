@@ -123,10 +123,16 @@ function saveData() {
 
 function loadSyncQueue() {
   try {
-    return JSON.parse(safeStorageGet(syncQueueKey) || "[]");
+    const queue = JSON.parse(safeStorageGet(syncQueueKey) || "[]");
+    return Array.isArray(queue) ? queue.map(normalizeSyncQueueItem) : [];
   } catch {
     return [];
   }
+}
+
+function normalizeSyncQueueItem(item) {
+  if (item?.record) delete item.record.baseUpdatedAt;
+  return item;
 }
 
 function saveSyncQueue() {
@@ -163,11 +169,10 @@ function safeStorageSet(key, value) {
 }
 
 function queueSync(table, record, action = "append") {
-  const baseUpdatedAt = record?.updatedAt || "";
   const updatedAt = new Date().toISOString();
   if (record) record.updatedAt = updatedAt;
   const syncRecord = enrichRecordForSync(record);
-  syncRecord.baseUpdatedAt = baseUpdatedAt;
+  delete syncRecord.baseUpdatedAt;
   syncRecord.updatedAt = updatedAt;
   const item = {
     syncId: uid("sync"),
