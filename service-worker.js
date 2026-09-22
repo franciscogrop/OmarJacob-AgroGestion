@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-omar-jacob-cache-v60-collapsed-forms-execution-date";
+const CACHE_NAME = "gestion-agro-omar-jacob-cache-v61-application-actions";
 const ASSETS = [
   "./",
   "./index.html",

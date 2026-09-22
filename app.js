@@ -2945,6 +2945,7 @@ function openApplicationFormFromOrder(orderId) {
   editingApplicationKey = "";
   highlightedApplicationId = "";
   applicationDraftOrderId = order.id;
+  configureApplicationSubmitButtons(false);
   switchView("aplicaciones");
   renderApplications();
   document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
@@ -2980,6 +2981,7 @@ function addProductToApplication(applicationId) {
   editingApplicationKey = "";
   highlightedApplicationId = "";
   applicationDraftOrderId = first.orderId || "";
+  configureApplicationSubmitButtons(false);
   switchView("aplicaciones");
   document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
 
@@ -3140,7 +3142,7 @@ function editApplication(key) {
   form.dataset.quantitySource = "quantity";
   toggleManualProductInput(form);
   document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
-  form.querySelector('button[type="submit"]').textContent = "Actualizar aplicación";
+  configureApplicationSubmitButtons(true);
   switchView("aplicaciones");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -3745,6 +3747,15 @@ function openMonitorFormForNew() {
   form.elements.lotId?.focus();
 }
 
+function configureApplicationSubmitButtons(editing = false) {
+  const form = document.querySelector("#applicationForm");
+  if (!form) return;
+  const addButton = form.querySelector('[data-application-action="add"]');
+  const finishButton = form.querySelector('[data-application-action="finish"]');
+  if (addButton) addButton.textContent = editing ? "Actualizar producto" : "Agregar otro producto";
+  finishButton?.classList.toggle("hidden-panel", editing);
+}
+
 function openApplicationFormForNew() {
   const form = document.querySelector("#applicationForm");
   const band = document.querySelector("#applicationFormBand");
@@ -3755,7 +3766,7 @@ function openApplicationFormForNew() {
   resetForm(form);
   form.elements.date.value = todayValue();
   form.elements.laborCostHa.value = 0;
-  form.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+  configureApplicationSubmitButtons(false);
   toggleManualProductInput(form);
   band.classList.remove("hidden-panel");
   band.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3799,7 +3810,7 @@ function cancelApplicationForm() {
   editingApplicationKey = "";
   applicationDraftOrderId = "";
   if (form) resetForm(form);
-  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar aplicación");
+  configureApplicationSubmitButtons(false);
   document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
   renderApplications();
 }
@@ -5272,6 +5283,7 @@ function bindForms() {
   document.querySelector("#applicationForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const wasEditingApplication = Boolean(editingApplicationKey);
+    const submitAction = wasEditingApplication ? "finish" : (event.submitter?.dataset.applicationAction || "finish");
     const values = formData(event.currentTarget);
     const product = values.productId === "__manual__"
       ? getOrCreateManualProduct(values.manualProductName, values.manualProductUnit, values.lotId)
@@ -5327,14 +5339,13 @@ function bindForms() {
         queueSync("applications", data.applications[index], "update");
       }
       editingApplicationKey = "";
-      event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+      configureApplicationSubmitButtons(false);
     } else {
       data.applications.push(record);
       queueSync("applications", record);
     }
     saveData();
-    const keepContext = applicationDraftOrderId && values.orderId === applicationDraftOrderId;
-    if (keepContext) {
+    if (submitAction === "add") {
       const kept = {
         date: values.date,
         lotId: values.lotId,
@@ -5355,23 +5366,26 @@ function bindForms() {
       event.currentTarget.elements.productId.value = "";
       if (event.currentTarget.elements.manualProductName) event.currentTarget.elements.manualProductName.value = "";
       toggleManualProductInput(event.currentTarget);
+      configureApplicationSubmitButtons(false);
+      renderAll();
+      event.currentTarget.elements.productId.focus();
+      showToast("Producto agregado. Podés cargar otro.");
     } else {
       resetForm(event.currentTarget);
       event.currentTarget.dataset.quantitySource = "dose";
       toggleManualProductInput(event.currentTarget);
-    }
-    renderAll();
-    if (wasEditingApplication) {
       highlightedApplicationId = applicationId;
       applicationDraftOrderId = "";
       document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
+      configureApplicationSubmitButtons(false);
+      renderAll();
       switchView("aplicaciones");
       renderApplications();
       window.setTimeout(() => {
         document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 0);
+      showToast(wasEditingApplication ? "Producto actualizado" : "Aplicación guardada y stock actualizado");
     }
-    showToast(wasEditingApplication ? "Aplicación actualizada" : "Aplicación guardada y stock actualizado");
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
