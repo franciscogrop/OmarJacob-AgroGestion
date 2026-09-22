@@ -49,6 +49,7 @@ let orderProductFilter = "Todos";
 let orderCropFilter = "Todos";
 let orderLotFilter = "Todos";
 let orderContractorFilter = "Todos";
+let pendingCompletionOrderId = "";
 let selectedOrderProductKey = "";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
@@ -1009,7 +1010,8 @@ function handleDepositProductSubmit(event) {
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   renderAll();
   showToast(changed.length > 1 ? `${changed.length} productos cargados en el remito` : wasEditing ? "Producto y costos actualizados" : "Ingreso guardado");
 }
@@ -1658,7 +1660,7 @@ function renderLots() {
   const formTitle = document.querySelector("#lotFormTitle");
   const cancelButton = document.querySelector("#cancelLotEdit");
   if (formTitle) formTitle.textContent = editingLotId ? "Editar lote" : "Nuevo lote";
-  if (cancelButton) cancelButton.hidden = !editingLotId;
+  if (cancelButton) cancelButton.hidden = false;
 
   document.querySelector("#lotsTable").innerHTML = data.lots
     .map((lot) => {
@@ -1711,6 +1713,7 @@ function editLot(lotId) {
   form.elements.variety.value = lot.variety || "";
   form.elements.previousCrop.value = lot.previousCrop || "";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
+  document.querySelector("#lotFormBand")?.classList.remove("hidden-panel");
   renderLots();
   form.closest(".form-band")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -1721,6 +1724,7 @@ function cancelLotEdit() {
   form?.reset();
   if (form?.elements?.campaign) form.elements.campaign.value = "2025/26";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar lote";
+  document.querySelector("#lotFormBand")?.classList.add("hidden-panel");
   renderLots();
 }
 
@@ -2563,12 +2567,14 @@ function renderOrderDetail(orderId) {
       </div>
       <div class="map-info-lines">
         <span>Número de orden: ${orderShortLabel(order)}</span>
+        <span>Fecha de ejecución: ${order.completionDate ? dateShort(order.completionDate) : "-"}</span>
         <span>Cultivo: ${order.crop || lotCrop(order.lotId) || "-"}</span>
         <span>Variedad/Híbrido: ${order.variety || lotVariety(order.lotId) || "-"}</span>
         <span>Costo labor/ha: ${money(order.laborCostHa || 0)}</span>
         <span>Observaciones: ${order.notes || "-"}</span>
       </div>
       <div class="detail-actions">
+        ${order.status !== "Finalizada" ? `<button class="link-button primary" data-finish-order="${order.id}">Finalizar orden</button>` : ""}
         <button class="link-button" data-edit-order="${order.id}">Editar orden</button>
         <button class="link-button danger" data-delete-order="${order.id}">Eliminar orden</button>
       </div>
@@ -2592,6 +2598,7 @@ function renderOrderDetail(orderId) {
 
   detail.querySelector("[data-edit-order]")?.addEventListener("click", () => editOrder(order.id));
   detail.querySelector("[data-delete-order]")?.addEventListener("click", () => deleteOrder(order.id));
+  detail.querySelector("[data-finish-order]")?.addEventListener("click", () => requestOrderCompletionDate(order.id));
   detail.querySelector("[data-add-application]")?.addEventListener("click", () => openApplicationFormFromOrder(order.id));
   detail.querySelector("[data-open-application]")?.addEventListener("click", () => {
     highlightedApplicationId = applicationId;
@@ -2683,7 +2690,7 @@ function renderMonitorDetail(monitorId) {
 }
 
 function renderApplications() {
-  document.querySelector("#applicationFormBand")?.classList.toggle("hidden-panel", Boolean(highlightedApplicationId));
+  if (highlightedApplicationId) document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
   const grouped = Array.from(data.applications.reduce((map, row) => {
     if (!row.id) return map;
     const item = map.get(row.id) || {
@@ -2940,6 +2947,7 @@ function openApplicationFormFromOrder(orderId) {
   applicationDraftOrderId = order.id;
   switchView("aplicaciones");
   renderApplications();
+  document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
 
   form.elements.date.value = order.date || todayValue();
   form.elements.lotId.value = order.lotId || "";
@@ -3006,6 +3014,7 @@ function editOrder(orderId) {
   form.dataset.defaultHectares = String(order.plannedHectares || "");
   form.querySelector('button[type="submit"]').textContent = "Actualizar orden";
   switchView("ordenes");
+  document.querySelector("#orderFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
   form.elements.task.focus();
   showToast("Editando orden");
@@ -3014,6 +3023,10 @@ function editOrder(orderId) {
 function updateOrderStatus(orderId, nextStatus) {
   const order = orderById(orderId);
   if (!order || !nextStatus) return;
+  if (nextStatus === "Finalizada" && order.status !== "Finalizada") {
+    requestOrderCompletionDate(orderId);
+    return;
+  }
   if (order.status === "Finalizada" && nextStatus !== "Finalizada" && !window.confirm("?Reabrir esta orden finalizada?")) return;
   const previousStatus = order.status || "Pendiente";
   order.status = nextStatus;
@@ -3027,6 +3040,31 @@ function updateOrderStatus(orderId, nextStatus) {
   saveData();
   renderAll();
   showToast(`Orden en estado: ${nextStatus}`);
+}
+
+function requestOrderCompletionDate(orderId) {
+  const order = orderById(orderId);
+  const dialog = document.querySelector("#orderCompletionDialog");
+  const dateInput = document.querySelector("#orderCompletionDate");
+  if (!order || !dialog || !dateInput) return;
+  pendingCompletionOrderId = orderId;
+  dateInput.value = order.completionDate || todayValue();
+  const description = document.querySelector("#orderCompletionDescription");
+  if (description) description.textContent = `${orderShortLabel(order)} - ${lotName(order.lotId)} - ${order.task}`;
+  dialog.showModal();
+  dateInput.focus();
+}
+
+function completeOrder(orderId, completionDate) {
+  const order = orderById(orderId);
+  if (!order || !completionDate) return;
+  order.status = "Finalizada";
+  order.completionDate = completionDate;
+  queueSync("orders", order, "update");
+  saveData();
+  renderAll();
+  if (selectedOrderId === orderId && document.querySelector("#ficha-orden")?.classList.contains("active")) renderOrderDetail(orderId);
+  showToast(`Orden finalizada el ${dateShort(completionDate)}`);
 }
 
 function deleteOrder(orderId) {
@@ -3064,6 +3102,7 @@ function editMonitor(monitorId) {
   updateMonitorPhotoPreview(monitorPhotoDraft);
   form.querySelector('button[type="submit"]').textContent = "Actualizar monitoreo";
   switchView("monitoreo");
+  document.querySelector("#monitorFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -3086,6 +3125,7 @@ function editApplication(key) {
   editingApplicationKey = key;
   highlightedApplicationId = "";
   applicationDraftOrderId = row.orderId || "";
+  document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
   form.elements.date.value = row.date || "";
   form.elements.lotId.value = row.lotId || "";
   form.elements.orderId.value = row.orderId || "";
@@ -3162,6 +3202,7 @@ function editProduct(productId) {
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -3177,7 +3218,8 @@ function cancelProductEdit() {
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   syncDepositLineButtons();
 }
 
@@ -3631,6 +3673,135 @@ function ensureCompleteReceiptsTable() {
   `;
   purchasesPanel.insertAdjacentElement("afterend", panel);
   return panel.querySelector("#completeReceiptsTable");
+}
+
+function openLotFormForNew() {
+  const form = document.querySelector("#lotForm");
+  const band = document.querySelector("#lotFormBand");
+  if (!form || !band) return;
+  editingLotId = "";
+  resetForm(form);
+  form.elements.campaign.value = activeCampaignValue();
+  form.querySelector('button[type="submit"]').textContent = "Guardar lote";
+  renderLots();
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.name?.focus();
+}
+
+function openProductFormForNew() {
+  const form = document.querySelector("#productForm");
+  const band = document.querySelector("#productFormBand");
+  if (!form || !band) return;
+  editingProductId = "";
+  resetForm(form);
+  resetDepositProductLines();
+  form.elements.receiptDate.required = true;
+  form.elements.receiptDate.value = todayValue();
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.receiptNumber?.focus();
+}
+
+function openOrderFormForNew() {
+  const form = document.querySelector("#orderForm");
+  const band = document.querySelector("#orderFormBand");
+  if (!form || !band) return;
+  editingOrderId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  form.elements.status.value = "Pendiente";
+  form.elements.laborCostHa.value = 0;
+  form.dataset.originalStatus = "Pendiente";
+  form.dataset.completionDate = "";
+  form.querySelector('button[type="submit"]').textContent = "Guardar orden";
+  applyOrderLotDefaultHectares(true);
+  applyLotDefaultCrop(form, true);
+  applyLotDefaultVariety(form, true);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function openMonitorFormForNew() {
+  const form = document.querySelector("#monitorForm");
+  const band = document.querySelector("#monitorFormBand");
+  if (!form || !band) return;
+  editingMonitorId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  if (form.elements.photoFile) form.elements.photoFile.value = "";
+  monitorPhotoDraft = [];
+  updateMonitorPhotoPreview([]);
+  form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo";
+  applyLotDefaultCrop(form, true);
+  applyLotDefaultVariety(form, true);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function openApplicationFormForNew() {
+  const form = document.querySelector("#applicationForm");
+  const band = document.querySelector("#applicationFormBand");
+  if (!form || !band) return;
+  editingApplicationKey = "";
+  applicationDraftOrderId = "";
+  highlightedApplicationId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  form.elements.laborCostHa.value = 0;
+  form.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+  toggleManualProductInput(form);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function openClosureFormForNew() {
+  const form = document.querySelector("#closureForm");
+  const band = document.querySelector("#closureFormBand");
+  if (!form || !band) return;
+  editingClosureId = "";
+  resetForm(form);
+  applyClosureDefaults(form, true);
+  band.classList.remove("hidden-panel");
+  renderClosures();
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function cancelOrderForm() {
+  const form = document.querySelector("#orderForm");
+  editingOrderId = "";
+  if (form) resetForm(form);
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar orden");
+  document.querySelector("#orderFormBand")?.classList.add("hidden-panel");
+}
+
+function cancelMonitorForm() {
+  const form = document.querySelector("#monitorForm");
+  editingMonitorId = "";
+  if (form) resetForm(form);
+  if (form?.elements?.photoFile) form.elements.photoFile.value = "";
+  monitorPhotoDraft = [];
+  updateMonitorPhotoPreview([]);
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo");
+  document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
+}
+
+function cancelApplicationForm() {
+  const form = document.querySelector("#applicationForm");
+  editingApplicationKey = "";
+  applicationDraftOrderId = "";
+  if (form) resetForm(form);
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar aplicación");
+  document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
+  renderApplications();
 }
 
 function renderProducts() {
@@ -4702,7 +4873,7 @@ function renderClosures() {
   const submitButton = document.querySelector("#closureSubmitButton");
   const cancelButton = document.querySelector("#cancelClosureEdit");
   if (submitButton) submitButton.textContent = editingClosureId ? "Guardar cambios" : "Guardar cierre";
-  if (cancelButton) cancelButton.classList.toggle("hidden-panel", !editingClosureId);
+  if (cancelButton) cancelButton.classList.remove("hidden-panel");
 
   document.querySelector("#closuresTable").innerHTML = visibleClosures
     .slice()
@@ -4759,6 +4930,7 @@ function editClosure(id) {
   form.elements.kgHarvested.value = record.kgHarvested ?? "";
   form.elements.priceTon.value = record.priceTon ?? "";
   form.elements.otherCosts.value = record.otherCosts ?? 0;
+  document.querySelector("#closureFormBand")?.classList.remove("hidden-panel");
   renderClosures();
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -4770,6 +4942,7 @@ function cancelClosureEdit() {
     resetForm(form);
     applyClosureDefaults(form, true);
   }
+  document.querySelector("#closureFormBand")?.classList.add("hidden-panel");
   renderClosures();
 }
 
@@ -4816,6 +4989,7 @@ function resetForm(form) {
 }
 
 function bindForms() {
+  document.querySelector("#newLotButton")?.addEventListener("click", openLotFormForNew);
   document.querySelector("#lotForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
@@ -4835,11 +5009,13 @@ function bindForms() {
     saveData();
     resetForm(event.currentTarget);
     renderAll();
+    document.querySelector("#lotFormBand")?.classList.add("hidden-panel");
     showToast("Lote guardado");
   });
 
   initializeDepositFormLayout();
   document.querySelector("#productForm").addEventListener("submit", handleDepositProductSubmit, true);
+  document.querySelector("#newDepositButton")?.addEventListener("click", openProductFormForNew);
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
@@ -4887,7 +5063,8 @@ function bindForms() {
     document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
     document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
     event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-    document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+    document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+    document.querySelector("#productFormBand")?.classList.add("hidden-panel");
     renderAll();
     showToast(isNewIngreso ? "Ingreso sumado al producto existente" : existing ? "Producto y costos actualizados" : "Producto guardado");
   });
@@ -4901,6 +5078,20 @@ function bindForms() {
   document.querySelector("#productForm").elements.receiptDate.value = todayValue();
 
   const orderForm = document.querySelector("#orderForm");
+  document.querySelector("#newOrderButton")?.addEventListener("click", openOrderFormForNew);
+  document.querySelector("#cancelOrderForm")?.addEventListener("click", cancelOrderForm);
+  document.querySelector("#orderCompletionForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const completionDate = document.querySelector("#orderCompletionDate")?.value || "";
+    if (!pendingCompletionOrderId || !completionDate) return;
+    completeOrder(pendingCompletionOrderId, completionDate);
+    pendingCompletionOrderId = "";
+    document.querySelector("#orderCompletionDialog")?.close();
+  });
+  document.querySelector("#cancelOrderCompletion")?.addEventListener("click", () => {
+    pendingCompletionOrderId = "";
+    document.querySelector("#orderCompletionDialog")?.close();
+  });
   orderForm.elements.lotId.addEventListener("change", () => {
     applyOrderLotDefaultHectares();
     applyLotDefaultCrop(orderForm);
@@ -4968,10 +5159,13 @@ function bindForms() {
     applyLotDefaultCrop(event.currentTarget, true);
     applyLotDefaultVariety(event.currentTarget, true);
     renderAll();
+    document.querySelector("#orderFormBand")?.classList.add("hidden-panel");
     showToast("Orden guardada");
   });
 
   const monitorForm = document.querySelector("#monitorForm");
+  document.querySelector("#newMonitorButton")?.addEventListener("click", openMonitorFormForNew);
+  document.querySelector("#cancelMonitorForm")?.addEventListener("click", cancelMonitorForm);
   monitorForm.elements.lotId.addEventListener("change", () => {
     applyLotDefaultCrop(monitorForm);
     applyLotDefaultVariety(monitorForm);
@@ -5041,6 +5235,7 @@ function bindForms() {
       monitorPhotoDraft = [];
       updateMonitorPhotoPreview([]);
       renderAll();
+      document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
       openMonitorDetail(record.id);
       showToast("Monitoreo guardado");
     } catch (error) {
@@ -5054,6 +5249,7 @@ function bindForms() {
   });
 
   const closureForm = document.querySelector("#closureForm");
+  document.querySelector("#newClosureButton")?.addEventListener("click", openClosureFormForNew);
   closureForm.elements.lotId.addEventListener("change", () => applyClosureDefaults(closureForm, true));
   document.querySelector("#cancelClosureEdit")?.addEventListener("click", cancelClosureEdit);
 
@@ -5061,6 +5257,8 @@ function bindForms() {
     toggleManualProductInput(event.currentTarget.form);
   });
   const applicationForm = document.querySelector("#applicationForm");
+  document.querySelector("#newApplicationButton")?.addEventListener("click", openApplicationFormForNew);
+  document.querySelector("#cancelApplicationForm")?.addEventListener("click", cancelApplicationForm);
   applicationForm.elements.dose.addEventListener("input", () => {
     applicationForm.dataset.quantitySource = "dose";
     syncApplicationQuantityFromDose(applicationForm);
@@ -5216,6 +5414,7 @@ function bindForms() {
     resetForm(event.currentTarget);
     applyClosureDefaults(event.currentTarget, true);
     renderAll();
+    document.querySelector("#closureFormBand")?.classList.add("hidden-panel");
     showToast(existing ? "Cierre actualizado" : "Campaña cerrada");
   });
 }

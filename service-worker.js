@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-omar-jacob-cache-v59-order-contractor-filter";
+const CACHE_NAME = "gestion-agro-omar-jacob-cache-v60-collapsed-forms-execution-date";
 const ASSETS = [
   "./",
   "./index.html",
